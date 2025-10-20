@@ -1,0 +1,80 @@
+# Proyecto R_ConsultaRUNT - Dependencias
+
+# Framework
+Flask
+
+# Asíncronas y Tareas Programadas
+celery==5.3.4          # Procesamiento de tareas distribuidas
+kombu==5.5.4           # Backend de mensajería de Celery
+apscheduler            # Planificador de tareas
+tenacity               # Reintentos automáticos con backoff
+
+# Validación y Modelado de Datos
+pydantic                # Validación y modelado de datos basado en tipos
+
+
+# Seguridad / Criptografía
+cryptography            # Cifrado, firmas y certificados
+
+# Procesamiento de Imágenes y Datos Numéricos
+pillow                  # Manipulación de imágenes
+numpy                   # Cálculos numéricos y estructuras matriciales
+
+# Notificaciones y Correo
+sendgrid==6.9.7         # Envío de correos vía API SendGrid
+
+# Dependencias Opcionales / Desarrollo
+ipython>=8.0.0          # Consola interactiva avanzada para desarrollo
+
+# Web Scraping
+beautifulsoup4==4.13.3  # Parseo de HTML y XML
+lxml==6.0.1             # Motor XML/HTML rápido
+requests==2.32.3        # Cliente HTTP simple
+soupsieve==2.6          # Selectores CSS para BeautifulSoup
+selenium==4.25.0        # Automatización del navegador
+webdriver-manager==4.0.2 # Manejo automático de drivers
+
+# Procesamiento y Análisis de Datos
+pandas==2.3.2           # Manipulación y análisis de datos
+tqdm==4.67.1            # Barras de progreso en iteraciones
+
+# Base de Datos
+psycopg[binary]==3.2.10 # Conector PostgreSQL optimizado
+sqlalchemy==2.0.23      # ORM y manejo de bases de datos
+
+# Email y Autenticación
+exchangelib==5.2.0      # Conexión con Microsoft Exchange / Outlook
+msal==1.26.0            # Autenticación Microsoft (OAuth2)
+requests-oauthlib==2.0.0 # Autenticación OAuth para peticiones HTTP
+oauth2client==4.1.3     # Cliente OAuth2 clásico (Google / otros)
+
+# Configuración
+python-dotenv==1.1.0    # Carga de variables de entorno desde .env
+
+# Generación y Manejo de PDF
+reportlab==4.0.7        # Creación de PDFs desde Python
+PyPDF2==3.0.1           # Manipulación y combinación de PDFs
+
+# Festivos (Calendarios Laborales)
+holidays==0.36          # Cálculo de días festivos por país
+
+# Calidad de Código
+flake8==7.0.0           # Linter
+black==23.12.1          # Formateador de código
+pylint==3.0.3           # Análisis estático y estilo
+mypy==1.7.1             # Verificación de tipos estáticos
+
+# Pruebas
+pytest==7.4.3           # Framework de pruebas
+pytest-cov==4.1.0       # Medición de cobertura de pruebas
+pytest-mock==3.12.0     # Mocking en pytest
+
+# Logging
+colorlog==6.8.0         # Colores y formato mejorado para logs
+
+# HTTP Avanzado
+httpx==0.25.2           # Cliente HTTP moderno y asíncrono
+
+# Utilidades Generales
+python-dateutil==2.8.2  # Manipulación avanzada de fechas
+pytz==2023.3            # Manejo de zonas horarias

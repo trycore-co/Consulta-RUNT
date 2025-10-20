@@ -1,0 +1,17 @@
+#Flask gitignore files and folders
+venv/
+.venv/
+instance/
+.env
+
+logs/
+capturas/
+
+# mac files
+.DS_Store
+
+*.pyc
+# idea files
+.idea/
+
+.log
