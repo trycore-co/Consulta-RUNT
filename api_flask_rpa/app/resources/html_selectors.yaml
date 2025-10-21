@@ -25,6 +25,9 @@ consulta_propietario:
   select_tipo_documento:
     by: "xpath"
     value: "//*[@id='tipoDocumento']"
+  panel_opciones_tipo_doc:
+    by: xpath
+    value: "//*[@id='tipoDocumento-panel']"
   input_numero_documento:
     by: "xpath"
     value: "//*[@id='numeroDocumento']"

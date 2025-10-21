@@ -144,7 +144,17 @@ class ScrapingService:
             tipo_elem = self.web_client.find_by_selector(s["select_tipo_documento"])
             tipo_elem.click()
             time.sleep(1)
-            
+
+            panel_selector = self.selectors["consulta_propietario"].get("panel_opciones_tipo_doc")
+            if panel_selector:
+                self.web_client.find_by_selector(panel_selector, timeout=10)
+
+            opt_xpath = f"//mat-option//span[contains(normalize-space(.), '{tipo_doc}')]"
+            logger.info(f"Buscando opción de tipo_doc con XPATH: {opt_xpath}")
+            opcion = self.web_client.find_element(By.XPATH, opt_xpath)
+            opcion.click()
+            time.sleep(1.0)
+
             self.web_client.send_keys_selector(s["input_numero_documento"], numero_doc)
             self.web_client.click_selector(s["boton_consultar"])
         except Exception as e:
