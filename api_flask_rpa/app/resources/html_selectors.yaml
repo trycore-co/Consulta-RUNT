@@ -1,0 +1,99 @@
+# Selectores del portal RUNT PRO
+# Estructura: clave lógica → tipo de selector (xpath, css, id, name, etc.)
+
+login:
+  url_home: "https://runtpro.runt.gov.co"
+  boton_continuar:
+    by: "xpath"
+    value: "//*[@id='continue']"
+  input_usuario:
+    by: "xpath"
+    value: "//*[@id='signInName']"
+  input_contrasena:
+    by: "xpath"
+    value: "//*[@id='password']"
+  boton_iniciar_sesion:
+    by: "xpath"
+    value: "//*[@id='next']"
+  mensaje_error_login:
+    by: "css"
+    value: "#localAccountForm > div.error.pageLevel p"
+  timeout_espera: 20
+
+consulta_propietario:
+  url_consulta: "#/consulta-automotores-por-propietario/consulta-vehiculo"
+  select_tipo_documento:
+    by: "xpath"
+    value: "//*[@id='tipoDocumento']"
+  input_numero_documento:
+    by: "xpath"
+    value: "//*[@id='numeroDocumento']"
+  boton_consultar:
+    by: "xpath"
+    value: "/html/body/host-runt-root/app-layout/app-theme-runt2/mat-sidenav-container/mat-sidenav-content/div/ng-component/div[2]/form/div[3]/div/button"
+  selector_placa:
+    by: "xpath"
+    value: "//*[@id='mat-select-value-3']/span"
+  panel_lista_placas:
+    by: "xpath"
+    value: "//*[@id='mat-select-2-panel']"
+  lista_placas:
+    by: "xpath"
+    value: "//*[@id='mat-select-2-panel']//mat-option"
+  alerta_modal:
+    by: "xpath"
+    value: "/html/body/div[4]/div"
+  alerta_boton_aceptar:
+    by: "xpath"
+    value: "/html/body/div[4]/div/div[6]/button[1]"
+
+detalle_vehiculo:
+  contenedor_detalle:
+    by: "xpath"
+    value: "/html/body/host-runt-root/app-layout/app-theme-runt2/mat-sidenav-container/mat-sidenav-content/div/ng-component/div[2]/div[2]/div/cyrrunt-pro-mr-info-vehiculo-rna/div"
+  bloque_detalle:
+    by: "xpath"
+    value: "/html/body/host-runt-root/app-layout/app-theme-runt2/mat-sidenav-container/mat-sidenav-content/div/ng-component/div[2]/div[2]/div/cyrrunt-pro-mr-info-vehiculo-rna/div/div"
+  etiquetas_datos:
+    by: "tag"
+    value: "label"
+  # campos de ejemplo (estos se mapean dinámicamente en extraction)
+  campos:
+    placa: "Placa"
+    marca: "Marca"
+    linea: "Línea"
+    clase: "Clase"
+    tipo_servicio: "Tipo de servicio"
+    tipo_carroceria: "Carrocería"
+    color: "Color"
+    modelo: "Modelo"
+    numero_motor: "Número de motor"
+    numero_chasis: "Número de chasis"
+    numero_serie: "Número de serie"
+    cilindraje: "Cilindraje"
+    combustible: "Combustible"
+    fecha_matricula: "Fecha de matrícula"
+    estado: "Estado"
+    municipio_matricula: "Municipio de matrícula"
+    propietario: "Propietario"
+    entidad_tránsito: "Entidad de tránsito"
+
+alertas:
+  alerta_nativa: "browser_alert"
+  modal_no_encontrado:
+    by: "xpath"
+    value: "/html/body/div[4]/div"
+  modal_boton_aceptar:
+    by: "xpath"
+    value: "/html/body/div[4]/div/div[6]/button[1]"
+
+comunes:
+  overlay_loader:
+    by: "css"
+    value: ".cdk-overlay-container"
+  spinner:
+    by: "css"
+    value: ".mat-progress-spinner"
+  boton_aceptar_generico:
+    by: "xpath"
+    value: "//button[contains(.,'Aceptar') or contains(.,'OK') or contains(.,'Aceptar')]"

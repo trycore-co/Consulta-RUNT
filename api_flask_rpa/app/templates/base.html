@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>{{ title or "Consulta RUNT" }}</title>
+    <style>
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            text-align: center;
+        }
+
+        h1 {
+            color: #007bff;
+            margin-bottom: 0.4em;
+        }
+
+        p {
+            font-size: 1.1em;
+            margin-top: 0;
+        }
+
+        .alert {
+            padding: 1em 2em;
+            border-radius: 10px;
+            margin-top: 1.5em;
+            font-weight: 500;
+            max-width: 480px;
+        }
+
+        .alert-success {
+            background: #e3fcef;
+            color: #0a7f3a;
+            border: 1px solid #b2f5c1;
+        }
+
+        .alert-error {
+            background: #fdecea;
+            color: #a50000;
+            border: 1px solid #f5c2c0;
+        }
+
+        .alert-info {
+            background: #e7f1ff;
+            color: #004085;
+            border: 1px solid #b8daff;
+        }
+
+        .spinner {
+            margin-top: 20px;
+            width: 50px;
+            height: 50px;
+            border: 6px solid #ddd;
+            border-top-color: #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <h1>{{ title }}</h1>
+    <p>{{ message }}</p>
+    {% block body %}
+    {% if status == "running" %}
+    <div class="spinner"></div>
+    <div class="alert alert-info">El proceso está en ejecución...</div>
+    {% elif status == "ok" %}
+    <div class="alert alert-success">{{ detail }}</div>
+    {% elif status == "error" %}
+    <div class="alert alert-error">{{ detail }}</div>
+    {% endif %}
+    {% endblock %}
+</body>
+
+</html>

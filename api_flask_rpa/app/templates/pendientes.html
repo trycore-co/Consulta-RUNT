@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="alert alert-info">
+    📊 <strong id="pendientes">{{ pendientes }}</strong> registros pendientes por procesar.
+</div>
+<p id="lastUpdate">Última actualización: {{ timestamp }}</p>
+
+<script>
+    async function actualizarPendientes() {
+        try {
+            const response = await fetch(window.location.pathname, {
+                headers: { "Accept": "application/json" }
+            });
+            if (!response.ok) throw new Error("Error HTTP " + response.status);
+            const data = await response.json();
+
+            const contador = document.getElementById("pendientes");
+            const lastUpdate = document.getElementById("lastUpdate");
+            contador.textContent = data.pendientes ?? 0;
+
+            const now = new Date();
+            lastUpdate.textContent =
+                "Última actualización: " + now.toLocaleTimeString();
+        } catch (err) {
+            console.error("Error al actualizar pendientes:", err);
+        }
+    }
+
+    // Refresca cada 10 segundos
+    setInterval(actualizarPendientes, 10000);
+</script>
+{% endblock %}

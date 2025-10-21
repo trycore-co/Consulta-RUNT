@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block body %}
+{% if status == "fuera_horario" %}
+<div class="alert alert-error">⏰ Fuera del horario laboral (7:00 a 18:00, Lunes a Viernes).</div>
+{% elif status == "ok" %}
+<div class="alert alert-success">🚀 Proceso ejecutado correctamente. Revisa NocoDB para ver los resultados.</div>
+{% else %}
+<div class="spinner"></div>
+<div class="alert alert-info">Iniciando ejecución del proceso...</div>
+{% endif %}
+{% endblock %}
