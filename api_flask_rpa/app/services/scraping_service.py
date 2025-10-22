@@ -231,14 +231,21 @@ class ScrapingService:
             xpath_placa = (
                 f"{s_panel['value']}//mat-option[./span[contains(text(), '{placa}')]]"
             )
-            el = self.web_client.find("xpath", xpath_placa)
+            el = self.web_client.find_element("xpath", xpath_placa)
             el.click()
             time.sleep(2)
 
             # Esperar contenedor de detalle
-            self.web_client.find_by_selector(s_det["contenedor_detalle"], timeout=30)
+            contenedor = self.web_client.find_by_selector(s_det["contenedor_detalle"], timeout=30)
             bloques = self.web_client.find_all_by_selector(s_det["bloque_detalle"])
 
+            # Asegura bajar hasta el final
+            self.web_client.driver.execute_script(
+                "arguments[0].scrollIntoView({block: 'center'});", contenedor
+            )
+            time.sleep(1.0)
+
+            # Extraer pares clave-valor de los bloques de detalle
             for block in bloques:
                 labels = block.find_elements(
                     By.TAG_NAME, s_det["etiquetas_datos"]["value"]
@@ -248,6 +255,11 @@ class ScrapingService:
                     val = labels[1].text.strip()
                     if key and val:
                         detalle[key] = val
+
+            # --- Captura final de pantalla completa ---
+            screenshot_path = f"./data/capturas/detalle_{placa}.png"
+            self.web_client.screenshot_save(screenshot_path)
+            logger.info(f"Captura guardada en: {screenshot_path}")
 
             logger.info("Campos extraídos: %d", len(detalle))
             return detalle

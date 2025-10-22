@@ -41,7 +41,7 @@ def main():
         return
 
     print(f"Placas encontradas: {placas}")
-    """
+
     # 5️⃣ Extraer detalle del primer vehículo
     placa = placas[0]
     print(f"Extrayendo detalle de la placa: {placa}")
@@ -50,7 +50,7 @@ def main():
     print("Detalle del vehículo obtenido:")
     for k, v in detalle.items():
         print(f"   {k}: {v}")
-    """
+
     # 6️⃣ Toma un pantallazo final
     screenshot = scraper.tomar_screenshot_bytes()
     with open("captura_runt.png", "wb") as f:
@@ -63,6 +63,7 @@ def main():
     web_client.close()
     print("Sesión finalizada correctamente.")
     """
+
 
 if __name__ == "__main__":
     main()
