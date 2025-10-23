@@ -3,17 +3,20 @@ from app.repositories.nocodb_source_repository import NocoDbSourceRepository
 from app.infrastructure.nocodb_client import NocoDBClient
 from app.infrastructure.web_client import WebClient
 from app.services.workflows.proceso_unitario_wf import ProcesoUnitarioWF
+from app.services.notification_service import NotificationService
 from app.utils.horarios_utils import puede_ejecutar_en_fecha
 from datetime import datetime
 from app.utils.logging_utils import get_logger
 
 logger = get_logger("proceso_consulta_wf")
+notif = NotificationService()
 
 
 class ProcesoConsultaWF:
     def __init__(self, nocodb_client: NocoDBClient, web_client: WebClient):
         self.nocodb_client = nocodb_client
         self.web_client = web_client
+        self.notifier = NotificationService()
         self.source_repo = NocoDbSourceRepository(self.nocodb_client)
 
     def ejecutar_lote(self):
@@ -25,15 +28,19 @@ class ProcesoConsultaWF:
         parametros = self.source_repo.obtener_parametros()
         ahora = datetime.now()
         if not puede_ejecutar_en_fecha(ahora.date(), ahora):
-            logger.info("Ejecución omitida: fuera de horario o día no hábil.")
+            motivo = "Ejecución omitida: fuera de horario o día no hábil."
+            logger.info(motivo)
+            notif.send_failure_controlled(None, motivo, None)
             return {
                 "processed": 0,
                 "message": "Fuera de horario laboral o día no hábil.",
             }
+
         # obtener pendientes
         limit = int(parametros.get("LimitePendientes", 50) or 50)
         pendientes = self.source_repo.obtener_pendientes(limit=limit)
         logger.info("Pendientes encontrados: %d", len(pendientes))
+        notif.send_start_notification(total_pendientes=len(pendientes))
 
         # parámetros comunes que pasaremos downstream
         reintentos_login = int(parametros.get("ReintentosLogin", 2) or 2)
@@ -82,6 +89,10 @@ class ProcesoConsultaWF:
             except Exception as e:
                 logger.exception(f"Error procesando registro {record_id}: {e}")
                 error_count += 1
+                screenshot = self.web_client.screenshot_save(f"./data/capturas/error_{record_id}.png")
+                notif.send_failure_unexpected(
+                    record_id=str(record_id), error=str(e), last_screenshot=screenshot
+                )
                 try:
                     self.source_repo.marcar_fallido(record, str(e))
                 except Exception as e2:

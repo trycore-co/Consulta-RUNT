@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Error controlado</title>
+  <style>
+    body { font-family: Arial; background: #fff8f0; padding: 20px; color: #333; }
+    .alert { border-left: 6px solid #ff9800; padding-left: 12px; }
+  </style>
+</head>
+<body>
+  <h2>⚠️ Error controlado durante ejecución</h2>
+  <div class="alert">
+    <p><strong>ID:</strong> {{ record_id }}</p>
+    <p><strong>Entrada:</strong> {{ input_masked }}</p>
+    <p><strong>Motivo:</strong> {{ motivo }}</p>
+  </div>
+  <p>Este error fue identificado como controlado. El proceso continúa para los demás registros.</p>
+</body>
+</html>

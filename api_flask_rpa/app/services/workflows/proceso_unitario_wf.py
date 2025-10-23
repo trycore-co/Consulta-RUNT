@@ -6,9 +6,9 @@ from app.services.pdf_service import PDFService
 from app.repositories.nocodb_target_repository import NocoDbTargetRepository
 from app.repositories.nocodb_source_repository import NocoDbSourceRepository
 from app.utils.logging_utils import get_logger
-from app.infrastructure.email_client import EmailClient
+# from app.infrastructure.email_client import EmailClient
 from app.services.notification_service import NotificationService
-import uuid
+from pathlib import Path
 import time
 
 logger = get_logger("proceso_unitario_wf")
@@ -35,13 +35,14 @@ class ProcesoUnitarioWF:
         # repos/services
         self.source_repo = NocoDbSourceRepository(self.nocodb_client)
         self.target_repo = NocoDbTargetRepository(self.nocodb_client)
+
         # selectors: carga desde archivo YAML si lo necesitas;
-        selectors = self._load_selectors()
-        self.scraper = ScrapingService(web_client=self.web_client, selectors=selectors)
+        selectors_path = Path(__file__).parent.parent / "resources" / "html_selectors.yaml"
+        self.scraper = ScrapingService(web_client=self.web_client, selectors_path=selectors_path)
         self.capture = CaptureService()
         self.pdf = PDFService()
-        self.email_client = EmailClient()
-        self.notifier = NotificationService(self.email_client)
+        # self.email_client = EmailClient()
+        self.notifier = NotificationService()
 
         # parámetros dinámicos
         self.reintentos_login = max(1, int(reintentos_login))
@@ -49,27 +50,6 @@ class ProcesoUnitarioWF:
         self.timeout_bajo = timeout_bajo
         self.timeout_medio = timeout_medio
         self.timeout_largo = timeout_largo
-
-    def _load_selectors(self):
-        # Ideal: cargar desde app/resources/html_selectors.yaml
-        return {
-            "login": {
-                "user": "#username",
-                "pass": "#password",
-                "submit": "button[type=submit]",
-            },
-            "consulta": {
-                "menu": "a[href*='automotores']",
-                "input_doc": "#numeroDocumento",
-                "boton_buscar": "#buscar",
-                "lista_placas": "table#resultados td.placa",
-            },
-            "detalle": {
-                "Placa": "css-selector-placa",
-                "Marca": "css-selector-marca",
-                # ... completa las 27 claves
-            },
-        }
 
     def _attempt_login(self, user, password) -> bool:
         ultimo_error = None
@@ -91,44 +71,43 @@ class ProcesoUnitarioWF:
 
     def ejecutar(self):
         record_id = self.record.get("ID")
+        tipo = self.record.get("TipoIdentificacion")
+        numero = self.record.get("NumeroIdentificacion")
+        input_masked = f"{tipo}:{numero}"
+
+        self.notifier.send_start_notification(1)  # Notificación de inicio unitario
+
         try:
-            self.source_repo.marcar_en_proceso(record_id)
-            # Login con reintentos
-            user = self.record.get("UserRunt") or None
-            pwd = self.record.get("PassRunt") or None
-            if not user or not pwd:
-                # fallback a variables de entorno (config)
-                from config import settings
+            from config import settings
 
-                user = user or settings.RUNT_USER
-                pwd = pwd or settings.RUNT_PASS
+            user = self.record.get("UserRunt") or settings.RUNT_USERNAME
+            pwd = self.record.get("PassRunt") or settings.RUNT_PASSWORD
 
+            # Intentos de login con reintentos
             if not self._attempt_login(user, pwd):
-                motivo = "Login fallido"
+                motivo = "Login fallido tras múltiples intentos"
                 self.source_repo.marcar_fallido(record_id, motivo)
                 self.notifier.send_failure_controlled(
-                    record_id,
-                    self.correlation_id,
-                    motivo,
-                    input_masked=f"{self.record.get('TipoIdentificacion')}:{self.record.get('NumeroIdentificacion')}",
+                    record_id=str(record_id),
+                    motivo=motivo,
+                    input_masked=input_masked,
                 )
                 return {"id": record_id, "status": "login_failed"}
 
-            # Proceso principal con reintentos por registro
+            # Proceso principal (reintentos por registro)
             intento = 0
             while intento < self.reintentos_proceso:
                 intento += 1
                 try:
-                    tipo = self.record.get("TipoIdentificacion")
-                    numero = self.record.get("NumeroIdentificacion")
+                    logger.info(f"Iniciando intento {intento}/{self.reintentos_proceso} para registro {record_id}")
                     placas = self.scraper.consultar_por_propietario(tipo, numero)
                     if not placas:
                         self.source_repo.marcar_fallido(record_id, "No Encontrado")
+                        motivo = "No se encontraron placas asociadas"
                         self.notifier.send_failure_controlled(
-                            record_id,
-                            self.correlation_id,
-                            "No Encontrado",
-                            input_masked=f"{tipo}:{numero}",
+                            record_id=str(record_id),
+                            motivo=motivo,
+                            input_masked=input_masked,
                         )
                         return {"id": record_id, "status": "no_encontrado"}
 
@@ -142,38 +121,42 @@ class ProcesoUnitarioWF:
                         )
                         image_paths.append(saved)
 
-                    pdf_path = self.pdf.consolidate_images_to_pdf(
-                        image_paths, self.correlation_id
-                    )
+                    pdf_path = self.pdf.consolidate_images_to_pdf(image_paths, self.correlation_id)
                     self.source_repo.marcar_exitoso(record_id, pdf_path)
+
+                    self.notifier.send_end_notification(
+                        exitosos=1, errores=0, pdf_path=pdf_path
+                    )  # Notificación final
                     return {"id": record_id, "status": "exitoso", "pdf": pdf_path}
+
                 except Exception as e:
-                    logger.exception(
-                        "Error en intento %d/%d del proceso para id=%s",
-                        intento,
-                        self.reintentos_proceso,
-                        record_id,
-                    )
-                    last_screens = self.capture.list_images_for_correlation(
-                        self.correlation_id
-                    )
+                    logger.exception(f"Error en intento {intento}/{self.reintentos_proceso} para ID={record_id}")
+                    last_screens = self.capture.list_images_for_correlation(self.correlation_id)
                     last_scr = last_screens[-1] if last_screens else None
+
                     if intento >= self.reintentos_proceso:
                         self.source_repo.marcar_fallido(record_id, str(e))
                         self.notifier.send_failure_unexpected(
-                            record_id,
-                            self.correlation_id,
-                            str(e),
+                            record_id=str(record_id),
+                            error=str(e),
                             last_screenshot=last_scr,
                         )
+                        self.notifier.send_end_notification(exitosos=0, errores=1)
                         return {"id": record_id, "status": "error", "error": str(e)}
-                    time.sleep(2 * intento)  # backoff exponencial sencillo
+                    time.sleep(2 * intento)  # backoff exponencial
+
         except Exception as exc:
-            logger.exception(
-                "Error inesperado en workflow unitario para id=%s", record_id
-            )
+            logger.exception(f"Error inesperado en workflow unitario para id={record_id}")
             try:
                 self.source_repo.marcar_fallido(record_id, str(exc))
             except Exception:
                 pass
+            last_screens = self.capture.list_images_for_correlation(self.correlation_id)
+            last_scr = last_screens[-1] if last_screens else None
+            self.notifier.send_failure_unexpected(
+                record_id=str(record_id),
+                error=str(exc),
+                last_screenshot=last_scr,
+            )
+            self.notifier.send_end_notification(exitosos=0, errores=1)
             return {"id": record_id, "status": "error", "error": str(exc)}

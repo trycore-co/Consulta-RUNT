@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Error inesperado</title>
+  <style>
+    body { font-family: Arial; background: #fff0f0; padding: 20px; color: #333; }
+    .alert { border-left: 6px solid #e53935; padding-left: 12px; }
+  </style>
+</head>
+<body>
+  <h2>💥 Error inesperado en el BOT RUNT</h2>
+  <div class="alert">
+    <p><strong>ID de registro:</strong> {{ record_id }}</p>
+    <p><strong>Error detectado:</strong> {{ error }}</p>
+  </div>
+
+  {% if last_screenshot %}
+    <p>📸 Se adjunta la última captura de pantalla disponible.</p>
+  {% endif %}
+  <p>El proceso fue interrumpido. Se recomienda revisar los logs y las evidencias adjuntas.</p>
+</body>
+</html>

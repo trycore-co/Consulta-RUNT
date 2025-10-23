@@ -28,13 +28,21 @@ class ScrapingService:
         y carga los selectores desde el archivo YAML.
         """
         self.web_client = web_client
-        selectors_path = (
-            selectors_path
-            or Path(__file__).parent.parent / "resources" / "html_selectors.yaml"
+        default_path = (
+            Path(__file__).parent.parent / "resources" / "html_selectors.yaml"
         )
-        with open(selectors_path, "r", encoding="utf-8") as f:
-            self.selectors = yaml.safe_load(f)
-            logger.info("Selectores cargados correctamente desde %s", selectors_path)
+        selectors_path = selectors_path or default_path
+
+        try:
+            with open(selectors_path, "r", encoding="utf-8") as f:
+                self.selectors = yaml.safe_load(f)
+            logger.info(f"Selectores cargados correctamente desde {selectors_path}")
+        except FileNotFoundError:
+            logger.error(f"No se encontró el archivo YAML en {selectors_path}")
+            self.selectors = {}
+        except Exception as e:
+            logger.error(f"Error cargando YAML de selectores: {e}")
+            self.selectors = {}
 
     def login(self, username: str, password: str) -> bool:
         """
