@@ -6,9 +6,7 @@ from app.services.pdf_service import PDFService
 from app.repositories.nocodb_target_repository import NocoDbTargetRepository
 from app.repositories.nocodb_source_repository import NocoDbSourceRepository
 from app.utils.logging_utils import get_logger
-# from app.infrastructure.email_client import EmailClient
 from app.services.notification_service import NotificationService
-from pathlib import Path
 import time
 
 logger = get_logger("proceso_unitario_wf")
@@ -21,6 +19,7 @@ class ProcesoUnitarioWF:
         nocodb_client: NocoDBClient,
         web_client: WebClient,
         correlation_id: str,
+        session_active: bool = False,
         reintentos_login: int = 3,
         reintentos_proceso: int = 2,
         timeout_bajo: int = 3,
@@ -31,14 +30,14 @@ class ProcesoUnitarioWF:
         self.nocodb_client = nocodb_client
         self.web_client = web_client
         self.correlation_id = correlation_id
+        self.session_active = session_active
 
         # repos/services
         self.source_repo = NocoDbSourceRepository(self.nocodb_client)
         self.target_repo = NocoDbTargetRepository(self.nocodb_client)
 
         # selectors: carga desde archivo YAML si lo necesitas;
-        selectors_path = Path(__file__).parent.parent / "resources" / "html_selectors.yaml"
-        self.scraper = ScrapingService(web_client=self.web_client, selectors_path=selectors_path)
+        self.scraper = ScrapingService(web_client=self.web_client)
         self.capture = CaptureService()
         self.pdf = PDFService()
         # self.email_client = EmailClient()
@@ -70,29 +69,57 @@ class ProcesoUnitarioWF:
         return False
 
     def ejecutar(self):
-        record_id = self.record.get("ID")
+        record_id = (
+            self.record.get("Id") or self.record.get("ID") or self.record.get("id")
+        )
         tipo = self.record.get("TipoIdentificacion")
-        numero = self.record.get("NumeroIdentificacion")
+        numero = self.record.get("NumeroIdentificacion") or self.record.get(
+            "NumIdentificacion"
+        )
+
+        # Validar que tenemos los datos necesarios
+        if not record_id:
+            logger.error(f"No se pudo extraer el ID del registro: {self.record}")
+            return {"status": "error", "error": "ID de registro no encontrado"}
+
+        if not numero:
+            logger.error(
+                f"No se pudo extraer el número de identificación del registro: {self.record}"
+            )
+            return {
+                "id": record_id,
+                "status": "error",
+                "error": "Número de identificación no encontrado",
+            }
+
         input_masked = f"{tipo}:{numero}"
+
+        logger.info(f"Procesando registro ID={record_id}, Tipo={tipo}, Numero={numero}")
+        # Marcar como “Procesando” en Noco
+        self.source_repo.marcar_en_proceso(self.record)
 
         self.notifier.send_start_notification(1)  # Notificación de inicio unitario
 
         try:
             from config import settings
+            if not self.session_active:
+                user = self.record.get("UserRunt") or settings.RUNT_USERNAME
+                pwd = self.record.get("PassRunt") or settings.RUNT_PASSWORD
 
-            user = self.record.get("UserRunt") or settings.RUNT_USERNAME
-            pwd = self.record.get("PassRunt") or settings.RUNT_PASSWORD
-
-            # Intentos de login con reintentos
-            if not self._attempt_login(user, pwd):
-                motivo = "Login fallido tras múltiples intentos"
-                self.source_repo.marcar_fallido(record_id, motivo)
-                self.notifier.send_failure_controlled(
-                    record_id=str(record_id),
-                    motivo=motivo,
-                    input_masked=input_masked,
+                # Intentos de login con reintentos
+                if not self._attempt_login(user, pwd):
+                    motivo = "Login fallido tras múltiples intentos"
+                    self.source_repo.marcar_fallido(self.record, motivo)
+                    self.notifier.send_failure_controlled(
+                        record_id=str(record_id),
+                        motivo=motivo,
+                        input_masked=input_masked,
+                    )
+                    return {"id": record_id, "status": "login_failed"}
+            else:
+                logger.info(
+                    f"Saltando login para registro {record_id}. La sesión se considera activa."
                 )
-                return {"id": record_id, "status": "login_failed"}
 
             # Proceso principal (reintentos por registro)
             intento = 0
@@ -100,29 +127,47 @@ class ProcesoUnitarioWF:
                 intento += 1
                 try:
                     logger.info(f"Iniciando intento {intento}/{self.reintentos_proceso} para registro {record_id}")
-                    placas = self.scraper.consultar_por_propietario(tipo, numero)
+                    placas, captura_lista_placas = (
+                        self.scraper.consultar_por_propietario(tipo, numero)
+                    )  # type: ignore
+                    screenshot_list_path = self.capture.save_screenshot_bytes(
+                        captura_lista_placas,
+                        self.correlation_id,
+                        numero,  # Identificador único para esta captura: [correlation_id]_[NumeroIdentificacion].png
+                    )
+                    logger.info(
+                        f"Captura de lista de placas guardada en: {screenshot_list_path}"
+                    )
                     if not placas:
-                        self.source_repo.marcar_fallido(record_id, "No Encontrado")
+                        self.scraper.volver_a_inicio()
+                        self.source_repo.marcar_fallido(self.record, "No Encontrado")
                         motivo = "No se encontraron placas asociadas"
                         self.notifier.send_failure_controlled(
                             record_id=str(record_id),
                             motivo=motivo,
                             input_masked=input_masked,
+                            screenshot_path=screenshot_list_path,
                         )
-                        return {"id": record_id, "status": "no_encontrado"}
+                        return {
+                            "id": record_id,
+                            "status": "no_encontrado",
+                            "screenshot_lista": screenshot_list_path,
+                            }
 
                     image_paths = []
+                    image_paths.append(screenshot_list_path)
                     for placa in placas:
                         detalle = self.scraper.abrir_ficha_y_extraer(placa)
-                        self.target_repo.upsert_vehicle_detail(detalle)
+                        self.target_repo.upsert_vehicle_detail(self.record, detalle)
                         png = self.scraper.tomar_screenshot_bytes()
                         saved = self.capture.save_screenshot_bytes(
                             png, self.correlation_id, placa
                         )
                         image_paths.append(saved)
 
-                    pdf_path = self.pdf.consolidate_images_to_pdf(image_paths, self.correlation_id)
-                    self.source_repo.marcar_exitoso(record_id, pdf_path)
+                    self.scraper.volver_a_inicio()
+                    pdf_path = self.pdf.consolidate_images_to_pdf(image_paths, numero)
+                    self.source_repo.marcar_exitoso(self.record)
 
                     self.notifier.send_end_notification(
                         exitosos=1, errores=0, pdf_path=pdf_path
@@ -135,7 +180,7 @@ class ProcesoUnitarioWF:
                     last_scr = last_screens[-1] if last_screens else None
 
                     if intento >= self.reintentos_proceso:
-                        self.source_repo.marcar_fallido(record_id, str(e))
+                        self.source_repo.marcar_fallido(self.record, str(e))
                         self.notifier.send_failure_unexpected(
                             record_id=str(record_id),
                             error=str(e),
@@ -148,7 +193,7 @@ class ProcesoUnitarioWF:
         except Exception as exc:
             logger.exception(f"Error inesperado en workflow unitario para id={record_id}")
             try:
-                self.source_repo.marcar_fallido(record_id, str(exc))
+                self.source_repo.marcar_fallido(self.record, str(exc))
             except Exception:
                 pass
             last_screens = self.capture.list_images_for_correlation(self.correlation_id)

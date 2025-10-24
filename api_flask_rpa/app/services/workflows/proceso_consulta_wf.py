@@ -53,6 +53,8 @@ class ProcesoConsultaWF:
         ok_count, error_count = 0, 0
         results = []
 
+        is_logged_in = False
+
         for record in pendientes:
             corr_id = str(uuid.uuid4())
             record_id = record.get("Id")
@@ -62,16 +64,13 @@ class ProcesoConsultaWF:
                 continue
 
             try:
-                # Marcar como “En Proceso” en Noco
-                logger.info(f"registro {record}")
-                self.source_repo.marcar_en_proceso(record)
-
                 # Ejecutar flujo unitario
                 wf_unit = ProcesoUnitarioWF(
                     record=record,
                     nocodb_client=self.nocodb_client,
                     web_client=self.web_client,
                     correlation_id=corr_id,
+                    session_active=is_logged_in,
                     reintentos_login=reintentos_login,
                     reintentos_proceso=reintentos_proceso,
                     timeout_bajo=timeout_bajo,
@@ -80,12 +79,29 @@ class ProcesoConsultaWF:
                 )
                 resultado = wf_unit.ejecutar()
 
-                # Marcar como “Procesado”
-                self.source_repo.marcar_exitoso(record, resultado.get("url_pdf", ""))
+                # ACTUALIZAR EL ESTADO DE LA SESIÓN:
+                # Si el primer registro fue exitoso, el login fue exitoso.
+                if not is_logged_in and resultado.get("status") == "exitoso":
+                    is_logged_in = True
+                    logger.info(
+                        "Login exitoso en el primer registro, se activó la bandera para el resto del lote."
+                    )
+                # Si el primer registro falló el login, el estado 'is_logged_in' seguirá siendo False,
+                # forzando el login en el siguiente registro.
+                if resultado.get("status") == "login_failed":
+                    is_logged_in = False
+                    logger.warning(
+                        "Fallo de login. La bandera de sesión activa se restableció."
+                    )
 
-                ok_count += 1
+                # Solo marcar como exitoso si el status es "exitoso"
+                if resultado.get("status") == "exitoso":
+                    ok_count += 1
+                else:
+                    # El workflow unitario ya marcó el estado apropiado (login_failed, no_encontrado, error)
+                    error_count += 1
+
                 results.append(resultado)
-
             except Exception as e:
                 logger.exception(f"Error procesando registro {record_id}: {e}")
                 error_count += 1
@@ -101,6 +117,7 @@ class ProcesoConsultaWF:
 
         logger.info(f"Lote completado. OK={ok_count}, ERROR={error_count}")
 
+        #  self.notifier.send_end_notification(exitosos=ok_count, errores=error_count, pdf_path=pdf_path)
         return {
             "procesados": ok_count,
             "errores": error_count,

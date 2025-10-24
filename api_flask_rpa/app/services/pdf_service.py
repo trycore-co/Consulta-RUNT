@@ -15,6 +15,6 @@ class PDFService:
         date = datetime.utcnow().strftime("%Y-%m-%d")
         out_folder = Path(self.pdf_dir) / date
         out_folder.mkdir(parents=True, exist_ok=True)
-        out_pdf = out_folder / f"{correlation_id}.pdf"
+        out_pdf = out_folder / f"{correlation_id}_{date}_ResumenPlacas.pdf"
         images_to_pdf(image_paths, str(out_pdf))
         return str(out_pdf)

@@ -5,6 +5,8 @@ usando WebClient y los selectores centralizados en resources/html_selectors.yaml
 from typing import List, Dict
 from app.utils.logging_utils import get_logger
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from app.utils.homologacion_utils import homologar_tipo_documento
 import time
@@ -50,32 +52,158 @@ class ScrapingService:
         Retorna True si el inicio de sesión es exitoso.
         """
         s = self.selectors["login"]
+        s_home = self.selectors["home"]
         try:
             logger.info("Abriendo página principal de RUNT PRO...")
             self.web_client.open("/")
+            # Si el indicador de bienvenida ya está presente, se asume sesión activa.
+            try:
+                # Usamos el selector de bienvenida como indicador de sesión activa/bienvenida.
+                welcome_indicator = self.web_client.find_by_selector(
+                    s_home["mensaje_bienvenida"], timeout=5
+                )
+                if welcome_indicator and welcome_indicator.is_displayed():
+                    logger.info(
+                        "Sesión ya activa. Se encontró el indicador de página principal, saltando login."
+                    )
+                    return True
+            except TimeoutException:
+                logger.info(
+                    "Indicador de página principal no encontrado, se procede con el flujo de login normal."
+                )
+            except Exception as e:
+                # Manejar cualquier otra excepción y proceder con el login
+                logger.warning(
+                    f"Error al verificar estado de sesión (no fatal): {e}. Se procede con login."
+                )
             self.web_client.click_selector(s["boton_continuar"])
             logger.info("Ingresando credenciales...")
             self.web_client.send_keys_selector(s["input_usuario"], username)
             self.web_client.send_keys_selector(s["input_contrasena"], password)
             self.web_client.click_selector(s["boton_iniciar_sesion"])
 
-            # Espera que el botón desaparezca como indicador de login correcto
+            # Verificar y manejar popup de sesiones
+            if self._handle_session_limit_popup():
+                logger.info("Popup de sesiones manejado correctamente")
+                time.sleep(3)  # Esperar a que cierre las sesiones anteriores
+
+            # Verificar que el login fue exitoso
             try:
-                self.web_client.wait_until_invisible(
-                    s["boton_iniciar_sesion"]["by"],
-                    s["boton_iniciar_sesion"]["value"],
-                    timeout=20,
+                # selector tu página principal después del login
+                s_home = self.selectors["home"]
+                ok = self.web_client.wait_until_is_visible(
+                    s_home["mensaje_bienvenida"], timeout=5
                 )
-                logger.info("Inicio de sesión exitoso.")
-                return True
+                if ok:
+                    logger.info("Inicio de sesión exitoso.")
+                    return True
             except TimeoutException:
-                logger.warning("No se detectó finalización del login.")
+                logger.error("No se encontró el indicador de sesión exitosa")
                 return False
+
         except Exception as e:
             logger.error("Error durante el login: %s", e)
             return False
 
-    def consultar_por_propietario2(self, tipo_documento: str, numero: str) -> List[str]:
+    def _handle_session_limit_popup(self) -> bool:
+        """
+        Detecta y maneja el popup de sesiones excedidas.
+        Hace clic en 'Cerrar sesiones' para cerrar las sesiones anteriores.
+        Retorna True si se detectó y manejó el popup, False si no apareció.
+        """
+        try:
+            s_popup = self.selectors["popup_sesiones"]
+
+            # Intentar detectar el popup (timeout corto porque puede no aparecer)
+            try:
+                # Buscar el mensaje característico del popup
+                mensaje_sel = s_popup["mensaje"]
+                popup = self.web_client.find_by_selector(mensaje_sel, timeout=5)
+
+                if popup.is_displayed():
+                    logger.warning("Detectado popup de sesiones excedidas")
+
+                    # Hacer clic en "Cerrar sesiones" para cerrar las sesiones anteriores
+                    try:
+                        btn_cerrar_sel = s_popup["boton_cerrar_sesiones"]
+                        self.web_client.click_selector(btn_cerrar_sel, timeout=5)
+                        logger.info("Clic en 'Cerrar sesiones' - cerrando sesiones anteriores")
+                        time.sleep(5)  # Esperar a que se cierren las sesiones
+                        return True
+
+                    except Exception as e:
+                        logger.error(f"No se pudo hacer clic en 'Cerrar sesiones': {e}")
+
+                        # Intentar con "Aceptar" como alternativa
+                        try:
+                            btn_aceptar_sel = s_popup["boton_aceptar"]
+                            self.web_client.click_selector(btn_aceptar_sel, timeout=5)
+                            logger.info("Clic en 'Aceptar' como alternativa")
+                            time.sleep(5)
+                            return True
+                        except Exception as e2:
+                            logger.error(f"No se pudo cerrar el popup: {e2}")
+                            return False
+
+            except TimeoutException:
+                # No apareció el popup, continuar normal
+                logger.debug("No se detectó popup de sesiones")
+                return False
+            except Exception as e:
+                # Cualquier otro error (elemento no encontrado, etc.)
+                logger.debug(f"No se detectó popup de sesiones: {e}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error manejando popup de sesiones: {e}")
+            return False
+
+    def _handle_error_ruta_popup(self) -> bool:
+        """
+        Detecta y maneja el popup de error de ruta/permisos.
+        Retorna True si se detectó y manejó el popup, False si no apareció.
+        """
+        try:
+            s_popup = self.selectors["popup_error_ruta"]
+
+            # Intentar detectar el popup (timeout corto porque puede no aparecer)
+            try:
+                # Buscar el mensaje característico del popup
+                mensaje_error_sel = s_popup["mensaje"]
+                mensaje_sel = s_popup["mensaje_permisos"]
+                popup = self.web_client.find_by_selector(
+                    mensaje_error_sel, timeout=5
+                ) or self.web_client.find_by_selector(mensaje_sel, timeout=5)
+
+                if popup.is_displayed():
+                    logger.warning("Detectado popup de error de ruta/permisos")
+
+                    # Hacer clic en "Aceptar" para cerrar el popup
+                    try:
+                        btn_aceptar_sel = s_popup["boton_aceptar"]
+                        self.web_client.click_selector(btn_aceptar_sel, timeout=5)
+                        logger.info("Popup de error de ruta cerrado")
+                        time.sleep(5)  # Esperar a que se cierre el popup
+                        return True
+
+                    except Exception as e:
+                        logger.error(f"No se pudo cerrar popup de error de ruta: {e}")
+                        return False
+
+            except TimeoutException:
+                # No apareció el popup, continuar normal
+                logger.debug("No se detectó popup de error de ruta")
+                return False
+            except Exception as e:
+                # Cualquier otro error (elemento no encontrado, etc.)
+                logger.debug(f"No se detectó popup de error de ruta: {e}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error manejando popup de error de ruta: {e}")
+            return False
+
+
         """
         1) Click en menú
         2) Seleccionar consulta de automotores por propietario
@@ -139,13 +267,58 @@ class ScrapingService:
     def consultar_por_propietario(self, tipo_doc: str, numero_doc: str):
         """
         Consulta las placas asociadas a un propietario en RUNT PRO.
+        Primero intenta navegar por el menú.
+        Si no esta el menú visible, navega a la url derectamente.
         Retorna lista de placas encontradas.
         """
         s = self.selectors["consulta_propietario"]
-        logger.info("Navegando a la página de consulta por propietario...")
-        self.web_client.open(s["url_consulta"])
+        navegacion_exitosa = False
 
-        # Ingresar tipo y número de documento
+        # 1. Intentar navegar por el menú (Prioridad)
+        if self._navegar_a_consulta_por_menu():
+            navegacion_exitosa = True
+        else:
+            # 2. Si falla el menú, intentar navegar directo a la URL como alternativa
+            logger.warning(
+                "Fallo al navegar por el menú. Intentando acceso directo a la URL..."
+            )
+            self.web_client.open(s["url_consulta"])
+            time.sleep(2)
+
+            # 2.1. Verificar si apareció popup de error de ruta/permisos
+            if self._handle_error_ruta_popup():
+                logger.error(
+                    "Popup de error de ruta detectado incluso con acceso directo. Abortando consulta."
+                )
+                """
+                # Verificar que el login fue exitoso
+                    try:
+                        # selector tu página principal después del pop up
+                        s_home = self.selectors["home"]
+                        ok = self.web_client.find_by_selector(
+                            s_home["menu_consultas"], timeout=5
+                        )
+                        if ok:
+                            logger.info("Menú de consultas visible.")
+                            return True
+                    except TimeoutException:
+                        logger.error("No se esta visible el menú de consultas")
+                        return False
+                """
+                raise Exception(
+                    "No se pudo acceder a la consulta por propietario ni por menú ni por URL"
+                )
+            else:
+                logger.info("Acceso directo por URL exitoso.")
+                navegacion_exitosa = True
+
+        if not navegacion_exitosa:
+            # Esto solo debería ocurrir si el menú falla y el acceso directo falla sin levantar pop-up
+            raise Exception(
+                "No se pudo acceder a la consulta por propietario: Fallo en navegación por menú y URL."
+            )
+
+        # 3. Ingresar tipo y número de documento
         try:
             tipo_doc = homologar_tipo_documento(tipo_doc)
             logger.info(f"Tipo de documento homologado: {tipo_doc}")
@@ -153,7 +326,7 @@ class ScrapingService:
             tipo_elem.click()
             time.sleep(1)
 
-            panel_selector = self.selectors["consulta_propietario"].get("panel_opciones_tipo_doc")
+            panel_selector = s["panel_opciones_tipo_doc"]
             if panel_selector:
                 self.web_client.find_by_selector(panel_selector, timeout=10)
 
@@ -171,10 +344,26 @@ class ScrapingService:
 
         # Esperar el selector de placa
         try:
-            self.web_client.find_by_selector(s["selector_placa"], timeout=30).click()
+            placas_ok = self.web_client.find_by_selector(s["selector_placa"], timeout=30).click()
+            if not placas_ok:
+                s_consulta = self.selectors["consulta_propietario"]
+                ok = self.web_client.wait_until_is_visible(
+                    s_consulta["alerta_modal"], timeout=5
+                )
+                if ok:
+                    png_bytes = self.tomar_screenshot_bytes()
+                    self.web_client.click_selector(
+                        s_consulta["alerta_boton_aceptar"], timeout=5
+                    )
+                    time.sleep(1)
+                    return ([], png_bytes)
+
         except TimeoutException:
             logger.error("No se encontró el selector de placas.")
-            return []
+            return ([])
+
+        #  Se toma la captura de la lista de placas
+        png_bytes = self.tomar_screenshot_bytes()
 
         # Obtener lista de placas
         try:
@@ -184,13 +373,14 @@ class ScrapingService:
                 for el in elementos
                 if el.text.strip() and el.text.upper() != "SELECCIONE"
             ]
+
             logger.info("Placas encontradas: %s", placas)
-            return placas
+            return (placas, png_bytes)
         except Exception as e:
             logger.error("Error al extraer lista de placas: %s", e)
-            return []
+            return ([], png_bytes)
 
-    def abrir_ficha_y_extraer2(self, placa: str) -> Dict[str, str]:
+
         """
         Abre el detalle de la placa y extrae los campos clave (27 campos).
         Debes hacer click sobre la placa en la lista y extraer por selectores.
@@ -225,6 +415,35 @@ class ScrapingService:
         detalle.setdefault("Placa", placa)
         return detalle
 
+    def _navegar_a_consulta_por_menu(self) -> bool:
+        """
+        Navega a la página de consulta de automotores por propietario usando el menú.
+        Retorna True si la navegación es exitosa, False si falla.
+        """
+        s_home = self.selectors["home"]
+        try:
+            logger.info("Intentando navegación por el menú...")
+            # Abrir menú lateral
+            self.web_client.click_selector(s_home["menu_consultas"], timeout=5)
+            time.sleep(5)
+
+            # Click en "Consulta información"
+            self.web_client.click_selector(s_home["consultar_informacion"], timeout=5)
+            time.sleep(5)
+
+            # Click en "Consulta de automotores por propietario"
+            self.web_client.click_selector(
+                s_home["opcion_automotores_propietario"], timeout=5
+            )
+            time.sleep(3)
+
+            logger.info("Navegación por menú exitosa.")
+            return True
+
+        except Exception as e:
+            logger.warning(f"Error navegando por el menú: {e}")
+            return False
+
     def abrir_ficha_y_extraer(self, placa: str) -> dict:
         """
         Abre la ficha de detalle del vehículo y extrae todos los campos visibles.
@@ -235,6 +454,7 @@ class ScrapingService:
         detalle = {"Placa": placa}
 
         try:
+            logger.info(f"Abriendo ficha de placa: {placa}")
             # Clic en la placa dentro del panel de resultados
             xpath_placa = (
                 f"{s_panel['value']}//mat-option[./span[contains(text(), '{placa}')]]"
@@ -254,6 +474,7 @@ class ScrapingService:
             time.sleep(1.0)
 
             # Extraer pares clave-valor de los bloques de detalle
+            logger.info(f"Extrayendo datos de placa: {placa}")
             for block in bloques:
                 labels = block.find_elements(
                     By.TAG_NAME, s_det["etiquetas_datos"]["value"]
@@ -264,11 +485,6 @@ class ScrapingService:
                     if key and val:
                         detalle[key] = val
 
-            # --- Captura final de pantalla completa ---
-            screenshot_path = f"./data/capturas/detalle_{placa}.png"
-            self.web_client.screenshot_save(screenshot_path)
-            logger.info(f"Captura guardada en: {screenshot_path}")
-
             logger.info("Campos extraídos: %d", len(detalle))
             return detalle
 
@@ -277,6 +493,25 @@ class ScrapingService:
                 "Error al abrir ficha o extraer datos de placa %s: %s", placa, e
             )
             raise
+
+    def volver_a_inicio(self):
+        """
+        Navega de vuelta a la página principal haciendo clic en el logo.
+        Usa el índice [2] del XPath para asegurar el elemento correcto.
+        """
+        try:
+            s_home = self.selectors["home"]
+            logo_xpath = (
+                f"({s_home['logo']['value']})[2]")  # Selecciona el segundo elemento)
+            logger.info(f"Volviendo a inicio con XPath indexado: {logo_xpath}")
+
+            # Usar find_element en lugar de click_selector para el XPath indexado
+            self.web_client.find_element(By.XPATH, logo_xpath).click()
+            time.sleep(1)
+            return True
+        except Exception as e:
+            logger.warning(f"No se pudo hacer clic en el logo para volver a inicio: {e}")
+            return False
 
     def tomar_screenshot_bytes(self) -> bytes:
         """
