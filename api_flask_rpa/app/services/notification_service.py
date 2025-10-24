@@ -62,7 +62,13 @@ class NotificationService:
             "IMPORTANTE - RPA_RUNT - Fin de ejecución del Bot", html, attachments=attachments
         )
 
-    def send_failure_controlled(self, record_id: str,  motivo: str, input_masked: str):
+    def send_failure_controlled(
+        self,
+        record_id: str,
+        motivo: str,
+        input_masked: str,
+        screenshot_path: Optional[str] = None,
+    ):
         """Envía notificación de error controlado (casos esperados)."""
         html = self._render_template(
             "failure_controlled.html.j2", {
@@ -70,7 +76,8 @@ class NotificationService:
                 "motivo": motivo,
                 "input_masked": input_masked
             },)
-        self.email_client.send_email("IMPORTANTE - RPA_RUNT - Error controlado", html)
+        attachments = [screenshot_path] if screenshot_path else []
+        self.email_client.send_email("IMPORTANTE - RPA_RUNT - Error controlado", html, attachments=attachments)
 
     def send_failure_unexpected(self, record_id: str, error: str, last_screenshot: str):
         """Envía correo de error inesperado (excepciones, fallos graves)"""

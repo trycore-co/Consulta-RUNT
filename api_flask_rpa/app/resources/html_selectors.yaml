@@ -20,6 +20,51 @@ login:
     value: "#localAccountForm > div.error.pageLevel p"
   timeout_espera: 20
 
+popup_sesiones:
+  contenedor:
+    by: "xpath"
+    value: "//div[@class='swal2-container swal2-center swal2-backdrop-show']"
+  mensaje:
+    by: "xpath"
+    value: "//div[contains(text(), 'número máximo permitido de sesiones')]"
+  boton_cerrar_sesiones:
+    by: "xpath"
+    value: "//button[contains(text(), 'Cerrar sesiones')]"
+  boton_aceptar:
+    by: "xpath"
+    value: "//button[contains(text(), 'Aceptar')]"
+
+home:
+  logo:
+    by: "xpath"
+    value: "//img[@class='img-logo mt-1 cursor-pointer']"
+  mensaje_bienvenida:
+    by: "xpath"
+    value: "//p[contains(., 'Te damos la bienvenida')]"
+  cerrar_navegacion_guiada:
+    by: "xpath"
+    value: "//button[@aria-label='Cerrar']"  
+  menu_consultas:
+    by: "xpath"
+    value: "//button[@aria-label='Abrir menú']"
+  consultar_informacion:
+    by: "xpath"
+    value: "//span[contains(., 'Consulta información')]"
+  opcion_automotores_propietario:
+    by: "xpath"
+    value: "//a[contains(., 'consulta de automotores por propietario')]" 
+
+popup_error_ruta:
+  mensaje:
+    by: "xpath"
+    value: "//h2[contains(text(), 'Error al buscar la ruta')]"
+  mensaje_permisos:
+    by: "xpath"
+    value: "//div[contains(text(), 'no cuenta con los permisos')]"
+  boton_aceptar:
+    by: "xpath"
+    value: "//button[contains(text(), 'Aceptar')]"
+
 consulta_propietario:
   url_consulta: "#/consulta-automotores-por-propietario/consulta-vehiculo"
   select_tipo_documento:
@@ -45,10 +90,10 @@ consulta_propietario:
     value: "//*[@id='mat-select-2-panel']//mat-option"
   alerta_modal:
     by: "xpath"
-    value: "/html/body/div[4]/div"
+    value: "//div[contains(text(), 'No existen vehículos')]"    
   alerta_boton_aceptar:
     by: "xpath"
-    value: "/html/body/div[4]/div/div[6]/button[1]"
+    value: "//button[contains(text(), 'Aceptar')]"
 
 detalle_vehiculo:
   contenedor_detalle:
