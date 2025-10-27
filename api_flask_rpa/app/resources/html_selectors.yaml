@@ -26,7 +26,7 @@ popup_sesiones:
     value: "//div[@class='swal2-container swal2-center swal2-backdrop-show']"
   mensaje:
     by: "xpath"
-    value: "//div[contains(text(), 'número máximo permitido de sesiones')]"
+    value: "//div[contains(text(), 'El usuario ya ha alcanzado el número máximo permitido de sesiones')]"
   boton_cerrar_sesiones:
     by: "xpath"
     value: "//button[contains(text(), 'Cerrar sesiones')]"
@@ -53,6 +53,9 @@ home:
   opcion_automotores_propietario:
     by: "xpath"
     value: "//a[contains(., 'consulta de automotores por propietario')]" 
+  cerrar_sesion:
+    by: "xpath"
+    value: "//button[contains(., 'Cerrar sesión')]" 
 
 popup_error_ruta:
   mensaje:

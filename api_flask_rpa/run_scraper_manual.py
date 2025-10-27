@@ -13,6 +13,7 @@ from app.services.pdf_service import PDFService
 from config import settings
 import time
 import uuid
+from datetime import datetime
 
 
 def test_nocodb_connection():
@@ -43,14 +44,14 @@ def main():
     # 2️⃣ Inicializar repositorios
     source_repo = NocoDbSourceRepository(nocodb_client)
     target_repo = NocoDbTargetRepository(nocodb_client)
-    
+
     # 3️⃣ Obtener un registro pendiente
     print("\n🔄 Obteniendo registro pendiente...")
     pendientes = source_repo.obtener_pendientes(limit=1)
     if not pendientes:
         print("❌ No hay registros pendientes para procesar")
         return
-    
+
     registro = pendientes[0]
     print(f"Cantidad de registros detectados: {len(pendientes)}")
     print(f"✅ Registro obtenido - ID: {registro.get('Id')}")
@@ -60,10 +61,10 @@ def main():
     scraper = ScrapingService(web_client)
     capture = CaptureService()
     pdf = PDFService()
-    
+    fecha_hora_inicio = datetime.now().isoformat()
     try:
         # 5️⃣ Login en el portal
-        print("\n🔄 Iniciando sesión en RUNT...")
+        print("\n Iniciando sesión en RUNT...")
         if not scraper.login(settings.RUNT_USERNAME, settings.RUNT_PASSWORD):
             print("Error en el login")
             return
@@ -73,29 +74,29 @@ def main():
 
         # 6️⃣ Marcar registro en proceso
         source_repo.marcar_en_proceso(registro)
-        
+
         # 7️⃣ Consultar placas
         tipo_doc = registro.get('TipoIdentificacion')
         num_doc = registro.get('NumIdentificacion')
-        
+
         print(f"\n🔄 Consultando placas para {tipo_doc}: {num_doc}")
         placas, screenshot = scraper.consultar_por_propietario(tipo_doc, num_doc)
-        
+
         if not placas:
             print(" No se encontraron placas")
             source_repo.marcar_fallido(registro, "No se encontraron placas asociadas")
             return
 
         print(f"Placas encontradas: {placas}")
-        
+
         # 8️⃣ Procesar cada placa
         correlation_id = str(uuid.uuid4())
         image_paths = []
-        
+
         # Guardar screenshot de lista de placas
         screenshot_path = capture.save_screenshot_bytes(
-            screenshot, 
-            correlation_id, 
+            screenshot,
+            correlation_id,
             f"lista_{num_doc}"
         )
         image_paths.append(screenshot_path)
@@ -104,10 +105,11 @@ def main():
             print(f"\n Procesando placa: {placa}")
             # Extraer detalles
             detalle = scraper.abrir_ficha_y_extraer(placa)
-            
+            ruta_pdf = None
+            fecha_hora_fin = datetime.now().isoformat()
             # Guardar en NocoDB
-            target_repo.upsert_vehicle_detail(registro, detalle)
-            
+            target_repo.upsert_vehicle_detail(registro, detalle, ruta_pdf, fecha_hora_inicio, fecha_hora_fin)
+
             # Capturar pantalla
             screenshot = scraper.tomar_screenshot_bytes()
             screenshot_path = capture.save_screenshot_bytes(
@@ -116,15 +118,15 @@ def main():
                 placa
             )
             image_paths.append(screenshot_path)
-            
+
             print(f"Placa {placa} procesada")
 
         # 9️⃣ Generar PDF
         pdf_path = pdf.consolidate_images_to_pdf(image_paths, num_doc)
         print(f"\n PDF generado: {pdf_path}")
-        
         # 🔟 Marcar como exitoso
         source_repo.marcar_exitoso(registro)
+        target_repo.update_ruta_pdf_by_proceso(registro, pdf_path)
         print("\n Proceso completado exitosamente!")
 
     except Exception as e:

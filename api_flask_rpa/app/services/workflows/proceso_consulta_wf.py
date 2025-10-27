@@ -27,7 +27,11 @@ class ProcesoConsultaWF:
         # 1) leer parámetros
         parametros = self.source_repo.obtener_parametros()
         ahora = datetime.now()
-        if not puede_ejecutar_en_fecha(ahora.date(), ahora):
+        hora_inicio_str = parametros.get("HoraInicio", "07:00")
+        hora_fin_str = parametros.get("HoraFin", "18:00")
+        if not puede_ejecutar_en_fecha(
+            ahora.date(), ahora, hora_inicio=hora_inicio_str, hora_fin=hora_fin_str
+        ):
             motivo = "Ejecución omitida: fuera de horario o día no hábil."
             logger.info(motivo)
             notif.send_failure_controlled(None, motivo, None)
