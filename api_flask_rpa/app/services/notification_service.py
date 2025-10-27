@@ -15,7 +15,18 @@ class NotificationService:
     """
 
     def __init__(self):
-        self.email_client = EmailClient()
+        # Inicializar EmailClient de forma segura: si faltan variables de configuración
+        # evitamos lanzar una excepción y deshabilitamos el envío de correos.
+        try:
+            self.email_client = EmailClient()
+            self._email_enabled = True
+        except Exception as e:
+            logger.warning(
+                "EmailClient no pudo inicializarse, las notificaciones por correo estarán deshabilitadas: %s",
+                e,
+            )
+            self.email_client = None
+            self._email_enabled = False
         templates_path = Path(__file__).parent.parent / "resources" / "email_templates"
         self.env = Environment(
             loader=FileSystemLoader(templates_path),
@@ -32,6 +43,10 @@ class NotificationService:
 
     def send_start_notification(self, total_pendientes: int):
         """Envía correo de inicio del proceso."""
+        if not self._email_enabled:
+            logger.info("Notificación de inicio omitida: EmailClient no configurado")
+            return
+
         html = self._render_template(
             "summary_batch.html.j2",
             {
@@ -47,6 +62,10 @@ class NotificationService:
 
     def send_end_notification(self, exitosos: int, errores: int, pdf_path: Optional[str]=None):
         """Envía correo de finalización del proceso."""
+        if not self._email_enabled:
+            logger.info("Notificación de fin omitida: EmailClient no configurado")
+            return
+
         html = self._render_template(
             "summary_batch.html.j2",
             {
@@ -70,6 +89,10 @@ class NotificationService:
         screenshot_path: Optional[str] = None,
     ):
         """Envía notificación de error controlado (casos esperados)."""
+        if not self._email_enabled:
+            logger.info("Notificación de error controlado omitida: EmailClient no configurado")
+            return
+
         html = self._render_template(
             "failure_controlled.html.j2", {
                 "record_id": record_id,
@@ -81,6 +104,10 @@ class NotificationService:
 
     def send_failure_unexpected(self, record_id: str, error: str, last_screenshot: str):
         """Envía correo de error inesperado (excepciones, fallos graves)"""
+        if not self._email_enabled:
+            logger.info("Notificación de error inesperado omitida: EmailClient no configurado")
+            return
+
         html = self._render_template(
             "failure_unexpected.html.j2",
             {

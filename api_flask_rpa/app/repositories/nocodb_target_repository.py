@@ -45,10 +45,8 @@ class NocoDbTargetRepository:
         fecha_actual = datetime.now().strftime("%Y-%m-%d")
         num_unico_proceso = f"{num_identificacion}_{fecha_actual}"
 
-        # 3. Preparar la marca de tiempo para la inserción
-        fecha_insercion = (
-            datetime.now().isoformat()
-        )  # Usar ISO 8601 o el formato que NocoDB necesite
+        # 3. Usar FechaIngreso del insumo como FechaInsercion
+        fecha_insercion = source_record.get("FechaIngreso") or datetime.now().isoformat()  # Si no hay FechaIngreso, usar fecha actual
 
         records_to_create = []
 
@@ -60,6 +58,7 @@ class NocoDbTargetRepository:
                 "NumUnicoProceso": num_unico_proceso,
                 "NumIdentificacion": num_identificacion,
                 "NombrePropietario": nombre_propietario,
+                "Placa": vehicle_details.get("Placa", ""),
                 # Campos del detalle extraído
                 "NombreDetalle": nombre_detalle,
                 "ValorDetalle": str(
@@ -69,9 +68,8 @@ class NocoDbTargetRepository:
                 "FechaInsercion": fecha_insercion,
                 "Estado": "Exitoso",  # O el estado que corresponda a la inserción del detalle
                 "Observacion": "Detalle de vehículo insertado",
-                # Campos de control (si se llenan después o se omiten en la inserción inicial)
-                # "FechaHoraInicio": None,
-                # "FechaHoraFin": None,
+                "FechaHoraInicio": datetime.now().isoformat(),
+                "FechaHoraFin": datetime.now().isoformat(),
             }
             records_to_create.append(record)
 

@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     FLASK_ENV: Optional[str] = os.getenv("FLASK_ENV")
     FLASK_APP: Optional[str] = os.getenv("FLASK_APP")
     FLASK_DEBUG: Optional[str] = os.getenv("FLASK_DEBUG")
+    FLASK_BASE_URL: Optional[str] = os.getenv("FLASK_BASE_URL")
+    
+    # Poller settings
+    POLLER_INTERVAL_SECONDS: Optional[str] = os.getenv("POLLER_INTERVAL_SECONDS")
 
     # NocoDB settings
     NOCODB_URL: Optional[str] = os.getenv("NOCODB_URL")
