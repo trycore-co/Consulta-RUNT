@@ -83,11 +83,16 @@ class ScrapingService:
             self.web_client.send_keys_selector(s["input_contrasena"], password)
             self.web_client.click_selector(s["boton_iniciar_sesion"])
             logger.info("Iniciando sesión...")
+            time.sleep(5)
 
-            # Verificar y manejar popup de sesiones
-            if self._handle_session_limit_popup():
-                logger.info("Popup de sesiones manejado correctamente")
-                time.sleep(3)  # Esperar a que cierre las sesiones anteriores
+            try:
+                # Verificar y manejar popup de sesiones
+                if self._handle_session_limit_popup():
+                    logger.info("Popup de sesiones manejado correctamente")
+                    time.sleep(3)  # Esperar a que cierre las sesiones anteriores
+            except Exception as e:
+                logger.error(f"Error manejando popup de sesiones: {e}")
+                return False
 
             # Verificar que el login fue exitoso
             try:
