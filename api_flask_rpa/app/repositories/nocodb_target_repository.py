@@ -127,7 +127,7 @@ class NocoDbTargetRepository:
         try:
             # 5. Llamar al cliente para realizar la actualización masiva
             
-            return self.client.update_record(
+            return self.client.update_record_where(
                 self.table, payload=payload, where=where_filter
             )
             """

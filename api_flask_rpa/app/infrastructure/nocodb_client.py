@@ -95,6 +95,17 @@ class NocoDBClient:
         return r.json()
 
     def update_record(
+        self, table: str, payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Actualiza un registro en la tabla indicada.
+        """
+        url = f"{self.base_url}/api/v2/tables/{table}/records"
+        r = self.session.patch(url, json=payload, timeout=30)
+        r.raise_for_status()
+        return r.json()
+
+    def update_record_where(
         self, table: str, payload: Dict[str, Any], where: str = None
     ) -> Dict[str, Any]:
         """
