@@ -15,7 +15,7 @@ import time
 
 class WebClient:
     def __init__(
-        self, base_url: str, headless: bool = True,
+        self, base_url: str, headless: bool = False,
         browser=None, timeout: int = 20
     ):
         self.base_url = base_url.rstrip("/")
@@ -23,11 +23,15 @@ class WebClient:
         self.driver = browser or self._create_driver(headless=headless)
         self.wait = WebDriverWait(self.driver, self.timeout)
 
-    def _create_driver(self, headless=True):
+    def _create_driver(self, headless=False):
         options = webdriver.ChromeOptions()
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument("--disable-features=RendererCodeIntegrity")
+        options.add_argument("--log-level=3")
+        options.add_argument("--disable-logging")
+        options.add_experimental_option("excludeSwitches", ["enable-logging"])
         options.add_argument("--start-maximized")
         options.add_argument("--disable-gpu")
         options.add_argument("--no-zygote")
@@ -196,6 +200,21 @@ class WebClient:
         try:
             WebDriverWait(self.driver, timeout).until(
                 EC.invisibility_of_element_located((by, value))
+            )
+            return True
+        except TimeoutException:
+            return False
+
+    def wait_until_is_visible(self, selector: dict, timeout: Optional[int] = None):
+        """
+        Espera hasta que un elemento es visible en el DOM.
+        Retorna True si aparece, False si no.
+        """
+        by = selector.get("by", "xpath").lower()
+        value = selector.get("value")
+        try:
+            WebDriverWait(self.driver, timeout).until(
+                EC.visibility_of_element_located((by, value))
             )
             return True
         except TimeoutException:
