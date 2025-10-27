@@ -2,6 +2,7 @@ from app.infrastructure.nocodb_client import NocoDBClient
 from typing import Dict, List
 from config import settings
 from datetime import datetime
+import json
 from app.utils.logging_utils import get_logger
 
 logger = get_logger("nocodb_target_repository")
@@ -89,52 +90,97 @@ class NocoDbTargetRepository:
 
     def update_ruta_pdf_by_proceso(self, source_record: Dict, ruta_pdf: str) -> Dict:
         """
-        Actualiza el campo 'RutaPDF' para todos los registros de detalle asociados a
-        un mismo proceso unitario (NumUnicoProceso).
-
-        :param source_record: El registro original de la tabla fuente (para extraer la NumIdentificacion).
-        :param ruta_pdf: La ruta del archivo PDF consolidado.
-        :return: Respuesta de la API de NocoDB.
+        Actualiza 'RutaPDF' en los registros de detalle cuyo NumUnicoProceso sea
+        {NumIdentificacion}_{YYYY-MM-DD} usando la fecha actual.
         """
-        # 1. Obtener la identificación del registro fuente para construir el NumUnicoProceso
-        num_identificacion = source_record.get(
-            "NumeroIdentificacion"
-        ) or source_record.get("NumIdentificacion")
-
+        # 1) Obtener identificación del registro fuente
+        num_identificacion = (
+            source_record.get("NumeroIdentificacion")
+            or source_record.get("NumIdentificacion")
+        )
         if not num_identificacion:
             logger.error(
                 "No se pudo obtener NumIdentificacion del registro fuente para actualizar el PDF."
             )
             return {"msg": "Error: NumIdentificacion no encontrado"}
 
-        # 2. Reconstruir el NumUnicoProceso usado para la inserción
+        # 2) Reconstruir NumUnicoProceso con fecha actual
         fecha_actual = datetime.now().strftime("%Y-%m-%d")
         num_unico_proceso = f"{num_identificacion}_{fecha_actual}"
 
-        # 3. Definir el filtro (IMPORTANTE: Mismas comillas simples si aplica)
-        where_filter = f"NumUnicoProceso,eq,'{num_unico_proceso}'"
-
+        # 3) Normalizar ruta y armar filtro
         ruta_web = ruta_pdf.replace("\\", "/")
-        # 4. Definir el payload de actualización
         payload = {"RutaPDF": ruta_web}
+        where_filter = f"(NumUnicoProceso,eq,{json.dumps(num_unico_proceso)})"
 
         logger.info(
-            "Actualizando %s registros de detalle con RutaPDF: %s",
-            num_unico_proceso,
-            ruta_pdf,
+            "Actualizando RutaPDF: NumUnicoProceso=%s  RutaPDF=%s",
+            num_unico_proceso, ruta_web
         )
 
+        # Intento 1: update masivo con WHERE
         try:
-            # 5. Llamar al cliente para realizar la actualización masiva
-            
-            return self.client.update_record_where(
-                self.table, payload=payload, where=where_filter
-            )
-            """
-            return self.client.update_record(self.table, payload=payload)
-            """
+            if hasattr(self.client, "update_records_with_where"):
+                resp = self.client.update_records_with_where(
+                    self.table,
+                    payload=payload,
+                    where=where_filter,
+                )
+                return {
+                    "msg": "OK (where)",
+                    "NumUnicoProceso": num_unico_proceso,
+                    "RutaPDF": ruta_web,
+                    "response": resp,
+                }
         except Exception as e:
-            logger.error(
-                "Error al actualizar RutaPDF para proceso %s: %s", num_unico_proceso, e
+            # Log del cuerpo de error si viene de requests/httpx
+            if hasattr(e, "response") and getattr(e.response, "text", None):
+                logger.error(
+                    "Fallo update_records_with_where: %s | body=%s",
+                    e, e.response.text
+                )
+            else:
+                logger.error("Fallo update_records_with_where: %s", e)
+            # continuar al fallback
+
+        # Fallback: listar IDs y hacer PATCH por Id
+        try:
+            # Quitar 'fields' porque tu cliente no lo soporta
+            rows = self.client.list_records(
+                self.table,
+                where=where_filter,
+                limit=1000,
             )
-            raise  # Propagar el error si la actualización falla
+
+            # Dependiendo del cliente, puede devolver {"list": [...]} o una lista directa
+            list_rows = rows.get("list") if isinstance(rows, dict) else rows
+            ids = [r.get("Id") for r in list_rows if r.get("Id")]
+
+            if not ids:
+                logger.warning(
+                    "Sin filas que actualizar (NumUnicoProceso=%s)", num_unico_proceso
+                )
+                return {
+                    "msg": "Sin filas que actualizar",
+                    "count": 0,
+                    "NumUnicoProceso": num_unico_proceso,
+                }
+
+            updated = 0
+            for row_id in ids:
+                self.client.update_record_by_id(self.table, row_id, payload)
+                updated += 1
+
+            return {
+                "msg": "OK (by-id)",
+                "count": updated,
+                "NumUnicoProceso": num_unico_proceso,
+                "RutaPDF": ruta_web,
+            }
+
+        except Exception as e:
+            if hasattr(e, "response") and getattr(e.response, "text", None):
+                logger.error("Error al actualizar RutaPDF: %s | body=%s", e, e.response.text)
+            else:
+                logger.error("Error al actualizar RutaPDF: %s", e)
+            raise

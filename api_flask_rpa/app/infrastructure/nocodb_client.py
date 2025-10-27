@@ -5,6 +5,7 @@ from app.utils.logging_utils import get_logger
 
 logger = get_logger("nocodb_client")
 
+
 class NocoDBClient:
     """
     Cliente para NocoDB API v2.
@@ -105,17 +106,51 @@ class NocoDBClient:
         r.raise_for_status()
         return r.json()
 
-    def update_record_where(
-        self, table: str, payload: Dict[str, Any], where: str = None
+    def update_records_with_where(
+        self, table: str, payload: Dict[str, Any], where: str
     ) -> Dict[str, Any]:
         """
-        Actualiza un registro en la tabla indicada. Si se proporciona 'where', realiza una actualización masiva.
+        Actualiza múltiples registros en una tabla de NocoDB usando un filtro 'where'.
+        PATCH /api/v2/tables/{table}/records?where=...
         """
         url = f"{self.base_url}/api/v2/tables/{table}/records"
-        data = {
-            "list": [payload],  # El 'payload' original son los campos a actualizar
-            "where": where,  # El filtro para seleccionar los registros
-        }
-        r = self.session.patch(url, json=data, timeout=30)
+        params = {"where": where}
+
+        logger.info("PATCH %s?where=%s", url, where)
+
+        try:
+            r = self.session.patch(url, params=params, json=payload, timeout=30)
+            logger.debug(
+                "Response status=%d headers=%s", r.status_code, dict(r.headers)
+            )
+
+            if r.status_code >= 400:
+                logger.error("Error en update_records_with_where: %s", r.text[:500])
+            r.raise_for_status()
+
+            # Intentar parsear JSON, si no, devolver texto plano
+            try:
+                return r.json()
+            except ValueError:
+                return {"msg": "OK", "status_code": r.status_code}
+
+        except requests.exceptions.RequestException as e:
+            logger.error("Error en request update_records_with_where: %s", str(e))
+            raise
+
+    def update_record_by_id(
+        self, table: str, row_id: str | int, payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Actualiza un registro por su rowId en NocoDB.
+        PATCH /api/v2/tables/{table}/records/{rowId}
+        """
+        url = f"{self.base_url}/api/v2/tables/{table}/records/{row_id}"
+        # Evitar intentar cambiar el Id si viene en el payload
+        payload = {k: v for k, v in payload.items() if k.lower() != "id"}
+        r = self.session.patch(url, json=payload, timeout=30)
         r.raise_for_status()
-        return r.json()
+        try:
+            return r.json()
+        except ValueError:
+            return {"msg": "OK", "status_code": r.status_code}
