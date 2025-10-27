@@ -82,6 +82,8 @@ class ScrapingService:
             self.web_client.send_keys_selector(s["input_contrasena"], password)
             self.web_client.click_selector(s["boton_iniciar_sesion"])
 
+
+            time.sleep(5)
             # Verificar y manejar popup de sesiones
             if self._handle_session_limit_popup():
                 logger.info("Popup de sesiones manejado correctamente")
@@ -204,13 +206,6 @@ class ScrapingService:
             return False
 
 
-        """
-        1) Click en menú
-        2) Seleccionar consulta de automotores por propietario
-        3) Llenar tipo de documento y número
-        4) Click buscar
-        5) Leer lista de placas (retorna lista de strings)
-        """
         # 1. ir al menu (si selector de menu existe)
         try:
             menu_sel = self.selectors["consulta"]["menu"]
@@ -218,51 +213,6 @@ class ScrapingService:
         except Exception:
             # puede que ya estés en la página; no fatal
             pass
-
-        # 2. diligenciar tipo y número (los selectores dependen del html)
-        input_sel = self.selectors["consulta"]["input_doc"]
-        input_el = self.web_client.find_element(By.CSS_SELECTOR, input_sel)
-        input_el.clear()
-        input_el.send_keys(numero)
-
-        # si hay un selector tipo_documento (select), manejarlo:
-        tipo_sel = self.selectors["consulta"].get("tipo_documento")
-        if tipo_sel:
-            try:
-                self.web_client.find_element(By.CSS_SELECTOR, tipo_sel).click()
-                # seleccionar la opción adecuada (por texto igual al tipo_documento)
-                opt_xpath = f"//mat-option//span[contains(., '{tipo_documento}')]"
-                self.web_client.find_element(By.XPATH, opt_xpath).click()
-            except Exception:
-                # continuar si no existe selector de tipo
-                pass
-
-        # 3. click buscar
-        boton_buscar = self.selectors["consulta"]["boton_buscar"]
-        self.web_client.find_element(By.CSS_SELECTOR, boton_buscar).click()
-
-        # 4. esperar resultados y parsear lista de placas
-        time.sleep(1.0)
-        placas = []
-        try:
-            placas_sel = self.selectors["consulta"]["lista_placas"]
-            elems = self.web_client.find_elements(By.CSS_SELECTOR, placas_sel)
-            for e in elems:
-                txt = e.text.strip()
-                if txt:
-                    placas.append(txt)
-        except Exception:
-            # posible caso "no encontrado"
-            # intentamos detectar modal SweetAlert2 con texto de "No hay resultados"
-            try:
-                # ejemplo SweetAlert2 class .swal2-popup
-                swal_sel = self.selectors.get("sweetalert_selector", ".swal2-popup")
-                el = self.web_client.find_element(By.CSS_SELECTOR, swal_sel, wait=False)
-                # si hay modal, no hay placas
-                return []
-            except Exception:
-                return []
-        return placas
 
     def consultar_por_propietario(self, tipo_doc: str, numero_doc: str):
         """
@@ -317,6 +267,53 @@ class ScrapingService:
             raise Exception(
                 "No se pudo acceder a la consulta por propietario: Fallo en navegación por menú y URL."
             )
+
+        # 2. diligenciar tipo y número (los selectores dependen del html)
+        input_sel = self.selectors["consulta"]["input_doc"]
+        input_el = self.web_client.find_element(By.CSS_SELECTOR, input_sel)
+        input_el.clear()
+        input_el.send_keys(numero_doc)
+
+        # si hay un selector tipo_documento (select), manejarlo:
+        tipo_sel = self.selectors["consulta"].get("tipo_documento")
+        if tipo_sel:
+            try:
+                self.web_client.find_element(By.CSS_SELECTOR, tipo_sel).click()
+                # seleccionar la opción adecuada por texto
+                opt_xpath = f"//mat-option//span[contains(., '{tipo_doc}')]"
+                self.web_client.find_element(By.XPATH, opt_xpath).click()
+            except Exception:
+                # continuar si no existe selector de tipo
+                pass
+
+        # 3. click buscar y esperar resultados
+        boton_buscar = self.selectors["consulta"]["boton_buscar"]
+        self.web_client.find_element(By.CSS_SELECTOR, boton_buscar).click()
+
+        # 4. esperar resultados y parsear lista de placas
+        time.sleep(1.0)
+        placas = []
+        try:
+            placas_sel = self.selectors["consulta"]["lista_placas"]
+            elems = self.web_client.find_elements(By.CSS_SELECTOR, placas_sel)
+            for e in elems:
+                txt = e.text.strip()
+                if txt:
+                    placas.append(txt)
+        except Exception:
+            # posible caso "no encontrado"
+            # intentamos detectar modal SweetAlert2 con texto de "No hay resultados"
+            try:
+                # ejemplo SweetAlert2 class .swal2-popup
+                swal_sel = self.selectors.get("sweetalert_selector", ".swal2-popup")
+                el = self.web_client.find_element(By.CSS_SELECTOR, swal_sel, wait=False)
+                if el and el.is_displayed():
+                    logger.info("Se detectó modal de 'No hay resultados'")
+                    return []
+                # si no se encuentra el modal o no está visible, continuamos con la búsqueda
+            except Exception as modal_error:
+                logger.debug(f"No se detectó modal de resultados vacíos: {modal_error}")
+                return []
 
         # 3. Ingresar tipo y número de documento
         try:
@@ -467,10 +464,22 @@ class ScrapingService:
             contenedor = self.web_client.find_by_selector(s_det["contenedor_detalle"], timeout=30)
             bloques = self.web_client.find_all_by_selector(s_det["bloque_detalle"])
 
-            # Asegura bajar hasta el final
-            self.web_client.driver.execute_script(
-                "arguments[0].scrollIntoView({block: 'center'});", contenedor
-            )
+            # Obtener altura total del contenedor y ajustar la ventana
+            total_height = self.web_client.driver.execute_script("""
+                let element = arguments[0];
+                let height = element.getBoundingClientRect().height;
+                let styles = window.getComputedStyle(element);
+                return height + parseInt(styles.marginTop) + parseInt(styles.marginBottom);
+            """, contenedor)
+
+            # Guardar tamaño original de la ventana
+            original_size = self.web_client.driver.get_window_size()
+            
+            # Ajustar el tamaño de la ventana para mostrar todo el contenido
+            self.web_client.driver.set_window_size(original_size['width'], total_height + 100)
+            
+            # Scroll al inicio del contenedor
+            self.web_client.driver.execute_script("arguments[0].scrollIntoView(true);", contenedor)
             time.sleep(1.0)
 
             # Extraer pares clave-valor de los bloques de detalle
@@ -486,9 +495,17 @@ class ScrapingService:
                         detalle[key] = val
 
             logger.info("Campos extraídos: %d", len(detalle))
+            
+            # Restaurar tamaño original de la ventana
+            self.web_client.driver.set_window_size(original_size['width'], original_size['height'])
             return detalle
 
         except Exception as e:
+            # Asegurar que restauramos el tamaño de la ventana incluso si hay error
+            try:
+                self.web_client.driver.set_window_size(original_size['width'], original_size['height'])
+            except Exception as resize_error:
+                logger.warning(f"No se pudo restaurar el tamaño de la ventana: {resize_error}")
             logger.error(
                 "Error al abrir ficha o extraer datos de placa %s: %s", placa, e
             )

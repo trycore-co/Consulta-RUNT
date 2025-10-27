@@ -1,7 +1,9 @@
 from app.infrastructure.nocodb_client import NocoDBClient
 from typing import List, Dict, Any
 from config import settings
+from app.utils.logging_utils import get_logger
 
+logger = get_logger("nocodb_source_repository")
 
 class NocoDbSourceRepository:
     def __init__(self, client: NocoDBClient):
@@ -31,8 +33,13 @@ class NocoDbSourceRepository:
         """
         where = "EstadoGestion,eq,Sin Procesar"
         try:
-            return self.client.list_records(self.table_insumo, where=where, limit=limit)
-        except Exception:
+            logger.debug("Intentando obtener registros pendientes con where=%s limit=%d", where, limit)
+            result = self.client.list_records(self.table_insumo, where=where, limit=limit)
+            logger.debug("Registros obtenidos: %d", len(result) if result else 0)
+            return result
+        except Exception as e:
+            logger.error("Error aplicando filtro where='%s': %s", where, str(e))
+            logger.warning("Intentando obtener registros sin filtro como fallback")
             return self.client.list_records(self.table_insumo, limit=limit)
 
     def marcar_en_proceso(self, record: Dict[str, Any]) -> None:

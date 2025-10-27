@@ -1,7 +1,9 @@
 import requests
 import json
 from typing import Any, Dict, List, Optional
+from app.utils.logging_utils import get_logger
 
+logger = get_logger("nocodb_client")
 
 class NocoDBClient:
     """
@@ -27,12 +29,61 @@ class NocoDBClient:
         url = f"{self.base_url}/api/v2/tables/{table}/records"
         params = {}
         if where:
+            # Accept either a dict (to be JSON-encoded) or a pre-built
+            # string filter. Some call sites pass a string like
+            # "EstadoGestion,eq,Sin Procesar" — convert that into the
+            # JSON array form that NocoDB expects (array of arrays)
+            # e.g. [["EstadoGestion","eq","Sin Procesar"]]
             if isinstance(where, dict):
                 params["where"] = json.dumps(where)
+            else:
+                s = str(where)
+                # if filter looks like 'col,op,value' convert to JSON array
+                parts = [p.strip() for p in s.split(",")]
+                if len(parts) >= 3:
+                    # join remaining parts as the value (in case value contains commas)
+                    col = parts[0]
+                    op = parts[1].lower()  # aseguramos que el operador esté en minúsculas
+                    val = ",".join(parts[2:]).strip()
+                    
+                    # Prueba con formato de filtro array usando corchetes
+                    where_json = {
+                        "fk_column_id": col,
+                        "status": "enable",
+                        "logical_op": "and",
+                        "comparison_op": op,
+                        "value": val
+                    }
+                    
+                    # Convertir a query string format que espera NocoDB
+                    filter_str = f"({col},{op},{val})"
+                    params["filter"] = filter_str
+                    logger.debug("Usando filtro: %s", filter_str)
+                else:
+                    # fallback: send raw string
+                    params["where"] = s
+                    logger.warning("Filtro no tiene formato col,op,val: %s", s)
+
         params["limit"] = limit
-        r = self.session.get(url, params=params, timeout=30)
-        r.raise_for_status()
-        return r.json().get("list", r.json())
+        logger.debug("GET %s params=%s", url, params)
+        try:
+            # Construir y loggear la URL completa antes de la petición
+            prepared_request = requests.Request('GET', url, params=params).prepare()
+            logger.debug("URL completa: %s", prepared_request.url)
+            r = self.session.get(url, params=params, timeout=30)
+            logger.debug("Response status=%d headers=%s", r.status_code, dict(r.headers))
+            if r.status_code >= 400:
+                logger.error("Error response: %s", r.text[:1000])
+            r.raise_for_status()
+            data = r.json()
+            result = data.get("list", data)
+            logger.debug("Registros obtenidos: %d", len(result) if result else 0)
+            if result:
+                logger.debug("Ejemplo primer registro: %s", result[0])
+            return result
+        except requests.exceptions.RequestException as e:
+            logger.error("Error en request: %s", str(e))
+            raise
 
     def create_record(self, table: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
