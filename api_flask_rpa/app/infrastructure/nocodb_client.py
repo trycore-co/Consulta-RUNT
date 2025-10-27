@@ -11,7 +11,7 @@ class NocoDBClient:
     Compatible con:
     GET  /api/v2/tables/{table_id}/records
     POST /api/v2/tables/{table_id}/records
-    PATCH /api/v2/tables/{table_id}/records/{record_id}
+    PATCH /api/v2/tables/{table_id}/records
     """
     def __init__(self, base_url: str, api_key: str):
         self.base_url = base_url.rstrip("/")
@@ -45,7 +45,7 @@ class NocoDBClient:
                     col = parts[0]
                     op = parts[1].lower()  # aseguramos que el operador esté en minúsculas
                     val = ",".join(parts[2:]).strip()
-                    
+
                     # Prueba con formato de filtro array usando corchetes
                     where_json = {
                         "fk_column_id": col,
@@ -54,7 +54,7 @@ class NocoDBClient:
                         "comparison_op": op,
                         "value": val
                     }
-                    
+
                     # Convertir a query string format que espera NocoDB
                     filter_str = f"({col},{op},{val})"
                     params["filter"] = filter_str
@@ -102,5 +102,20 @@ class NocoDBClient:
         """
         url = f"{self.base_url}/api/v2/tables/{table}/records"
         r = self.session.patch(url, json=payload, timeout=30)
+        r.raise_for_status()
+        return r.json()
+
+    def update_record_where(
+        self, table: str, payload: Dict[str, Any], where: str = None
+    ) -> Dict[str, Any]:
+        """
+        Actualiza un registro en la tabla indicada. Si se proporciona 'where', realiza una actualización masiva.
+        """
+        url = f"{self.base_url}/api/v2/tables/{table}/records"
+        data = {
+            "list": [payload],  # El 'payload' original son los campos a actualizar
+            "where": where,  # El filtro para seleccionar los registros
+        }
+        r = self.session.patch(url, json=data, timeout=30)
         r.raise_for_status()
         return r.json()

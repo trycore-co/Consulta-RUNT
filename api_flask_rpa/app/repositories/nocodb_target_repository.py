@@ -13,7 +13,12 @@ class NocoDbTargetRepository:
         self.date_format = "%Y-%m-%d %H:%M:%S%z"  # Formato ajustar si es necesario
 
     def upsert_vehicle_detail(
-        self, source_record: Dict, vehicle_details: Dict
+        self,
+        source_record: Dict,
+        vehicle_details: Dict,
+        ruta_pdf: str | None = None,
+        fecha_inicio: datetime = None,
+        fecha_fin: datetime = None,
     ) -> List[Dict]:
         """
         Inserta un registro por cada par NombreDetalle/ValorDetalle extraído.
@@ -68,8 +73,9 @@ class NocoDbTargetRepository:
                 "FechaInsercion": fecha_insercion,
                 "Estado": "Exitoso",  # O el estado que corresponda a la inserción del detalle
                 "Observacion": "Detalle de vehículo insertado",
-                "FechaHoraInicio": datetime.now().isoformat(),
-                "FechaHoraFin": datetime.now().isoformat(),
+                "FechaHoraInicio": fecha_inicio,
+                "FechaHoraFin": fecha_fin,
+                "RutaPDF": ruta_pdf,
             }
             records_to_create.append(record)
 
@@ -80,3 +86,55 @@ class NocoDbTargetRepository:
             responses.append(response)
 
         return responses
+
+    def update_ruta_pdf_by_proceso(self, source_record: Dict, ruta_pdf: str) -> Dict:
+        """
+        Actualiza el campo 'RutaPDF' para todos los registros de detalle asociados a
+        un mismo proceso unitario (NumUnicoProceso).
+
+        :param source_record: El registro original de la tabla fuente (para extraer la NumIdentificacion).
+        :param ruta_pdf: La ruta del archivo PDF consolidado.
+        :return: Respuesta de la API de NocoDB.
+        """
+        # 1. Obtener la identificación del registro fuente para construir el NumUnicoProceso
+        num_identificacion = source_record.get(
+            "NumeroIdentificacion"
+        ) or source_record.get("NumIdentificacion")
+
+        if not num_identificacion:
+            logger.error(
+                "No se pudo obtener NumIdentificacion del registro fuente para actualizar el PDF."
+            )
+            return {"msg": "Error: NumIdentificacion no encontrado"}
+
+        # 2. Reconstruir el NumUnicoProceso usado para la inserción
+        fecha_actual = datetime.now().strftime("%Y-%m-%d")
+        num_unico_proceso = f"{num_identificacion}_{fecha_actual}"
+
+        # 3. Definir el filtro (IMPORTANTE: Mismas comillas simples si aplica)
+        where_filter = f"NumUnicoProceso,eq,'{num_unico_proceso}'"
+
+        ruta_web = ruta_pdf.replace("\\", "/")
+        # 4. Definir el payload de actualización
+        payload = {"RutaPDF": ruta_web}
+
+        logger.info(
+            "Actualizando %s registros de detalle con RutaPDF: %s",
+            num_unico_proceso,
+            ruta_pdf,
+        )
+
+        try:
+            # 5. Llamar al cliente para realizar la actualización masiva
+            
+            return self.client.update_record_where(
+                self.table, payload=payload, where=where_filter
+            )
+            """
+            return self.client.update_record(self.table, payload=payload)
+            """
+        except Exception as e:
+            logger.error(
+                "Error al actualizar RutaPDF para proceso %s: %s", num_unico_proceso, e
+            )
+            raise  # Propagar el error si la actualización falla

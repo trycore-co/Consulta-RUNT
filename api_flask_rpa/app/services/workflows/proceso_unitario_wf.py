@@ -8,6 +8,7 @@ from app.repositories.nocodb_source_repository import NocoDbSourceRepository
 from app.utils.logging_utils import get_logger
 from app.services.notification_service import NotificationService
 import time
+from datetime import datetime
 
 logger = get_logger("proceso_unitario_wf")
 
@@ -93,7 +94,7 @@ class ProcesoUnitarioWF:
             }
 
         input_masked = f"{tipo}:{numero}"
-
+        fecha_hora_inicio = datetime.now().isoformat()
         logger.info(f"Procesando registro ID={record_id}, Tipo={tipo}, Numero={numero}")
         # Marcar como “Procesando” en Noco
         self.source_repo.marcar_en_proceso(self.record)
@@ -141,24 +142,13 @@ class ProcesoUnitarioWF:
                     if not placas:
                         self.scraper.volver_a_inicio()
                         self.source_repo.marcar_fallido(self.record, "No Encontrado")
-                        motivo = "No se encontraron placas asociadas"
-                        self.notifier.send_failure_controlled(
-                            record_id=str(record_id),
-                            motivo=motivo,
-                            input_masked=input_masked,
-                            screenshot_path=screenshot_list_path,
-                        )
-                        return {
-                            "id": record_id,
-                            "status": "no_encontrado",
-                            "screenshot_lista": screenshot_list_path,
-                            }
 
                     image_paths = []
                     image_paths.append(screenshot_list_path)
                     for placa in placas:
                         detalle = self.scraper.abrir_ficha_y_extraer(placa)
-                        self.target_repo.upsert_vehicle_detail(self.record, detalle)
+                        fecha_hora_fin = datetime.now().isoformat()
+                        self.target_repo.upsert_vehicle_detail(self.record, vehicle_details=detalle, ruta_pdf=None, fecha_inicio=fecha_hora_inicio, fecha_fin=fecha_hora_fin)
                         png = self.scraper.tomar_screenshot_bytes()
                         saved = self.capture.save_screenshot_bytes(
                             png, self.correlation_id, placa
@@ -168,6 +158,7 @@ class ProcesoUnitarioWF:
                     self.scraper.volver_a_inicio()
                     pdf_path = self.pdf.consolidate_images_to_pdf(image_paths, numero)
                     self.source_repo.marcar_exitoso(self.record)
+                    self.target_repo.update_ruta_pdf_by_proceso(self.record, pdf_path)
 
                     self.notifier.send_end_notification(
                         exitosos=1, errores=0, pdf_path=pdf_path
