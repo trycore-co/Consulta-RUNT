@@ -14,11 +14,16 @@ from config import settings
 import time
 import uuid
 from datetime import datetime
+from app.utils.logging_utils import get_logger
+
+# Inicializar el logger para este script
+logger = get_logger("scraper_manual")
 
 
 def test_nocodb_connection():
     """Prueba la conexión con NocoDB"""
     print("🔄 Probando conexión con NocoDB...")
+    logger.info("🔄 Probando conexión con NocoDB...")
     try:
         nocodb_client = NocoDBClient(
             base_url=settings.NOCODB_URL,
@@ -28,9 +33,12 @@ def test_nocodb_connection():
         params = source_repo.obtener_parametros()
         print("✅ Conexión con NocoDB exitosa!")
         print(f"   Parámetros cargados: {len(params)}")
+        logger.info("✅ Conexión con NocoDB exitosa!")
+        logger.info(f"   Parámetros cargados: {len(params)}")
         return nocodb_client
     except Exception as e:
         print(f"❌ Error conectando con NocoDB: {e}")
+        logger.error(f"❌ Error conectando con NocoDB: {e}", exc_info=True)
         return None
 
 
@@ -39,6 +47,7 @@ def main():
     nocodb_client = test_nocodb_connection()
     if not nocodb_client:
         print("⛔ No se puede continuar sin conexión a NocoDB")
+        logger.critical("⛔ No se puede continuar sin conexión a NocoDB")
         return
 
     # 2️⃣ Inicializar repositorios
@@ -47,14 +56,18 @@ def main():
 
     # 3️⃣ Obtener un registro pendiente
     print("\n🔄 Obteniendo registro pendiente...")
+    logger.info("\n🔄 Obteniendo registro pendiente...")
     pendientes = source_repo.obtener_pendientes(limit=1)
     if not pendientes:
         print("❌ No hay registros pendientes para procesar")
+        logger.warning("❌ No hay registros pendientes para procesar")
         return
 
     registro = pendientes[0]
     print(f"Cantidad de registros detectados: {len(pendientes)}")
     print(f"✅ Registro obtenido - ID: {registro.get('Id')}")
+    logger.info(f"Cantidad de registros detectados: {len(pendientes)}")
+    logger.info(f"✅ Registro obtenido - ID: {registro.get('Id')}")
 
     # 4️⃣ Inicializar servicios
     web_client = WebClient(base_url=settings.RUNT_URL, headless=False)
@@ -65,21 +78,28 @@ def main():
     try:
         # 5️⃣ Login en el portal
         print("\n Iniciando sesión en RUNT...")
+        logger.info("\n Iniciando sesión en RUNT...")
         if not scraper.login(settings.RUNT_USERNAME, settings.RUNT_PASSWORD):
             print("Error en el login")
+            logger.error(
+                "Error en el login. Credenciales inválidas o falla de la página."
+            )
             return
 
         print("Login exitoso")
+        logger.info("Login exitoso")
         time.sleep(2)
 
         # 6️⃣ Marcar registro en proceso
         source_repo.marcar_en_proceso(registro)
+        logger.info(f"Registro {registro.get('Id')} marcado 'en proceso'.")
 
         # 7️⃣ Consultar placas
         tipo_doc = registro.get('TipoIdentificacion')
         num_doc = registro.get('NumIdentificacion')
 
         print(f"\n🔄 Consultando placas para {tipo_doc}: {num_doc}")
+        logger.info(f"\n🔄 Consultando placas para {tipo_doc}: {num_doc}")
         placas, screenshot = scraper.consultar_por_propietario(tipo_doc, num_doc)
 
         correlation_id = str(uuid.uuid4())
@@ -87,6 +107,7 @@ def main():
 
         if not placas:
             print(" No se encontraron placas")
+            logger.warning("No se encontraron placas asociadas al propietario.")
             source_repo.marcar_fallido(registro, "Error controlado: No se encontraron placas asociadas")
             screenshot_path = capture.save_screenshot_bytes(
                 screenshot,
@@ -95,6 +116,7 @@ def main():
             )
             image_paths.append(screenshot_path)
             pdf_path = pdf.consolidate_images_to_pdf(image_paths, num_doc)
+            logger.info(f"Registro fallido. PDF generado en: {pdf_path}")
             return {
                 "id": registro.get("Id"),
                 "status": "exitoso",
@@ -102,6 +124,7 @@ def main():
             }
 
         print(f"Placas encontradas: {placas}")
+        logger.info(f"Placas encontradas: {placas}")
 
         # 8️⃣ Procesar cada placa
         # Guardar screenshot de lista de placas
@@ -114,12 +137,14 @@ def main():
 
         for placa in placas:
             print(f"\n Procesando placa: {placa}")
+            logger.info(f"\n Procesando placa: {placa}")
             # Extraer detalles
             detalle, screenshot = scraper.abrir_ficha_y_extraer(placa)
             ruta_pdf = None
             fecha_hora_fin = datetime.now().isoformat()
             # Guardar en NocoDB
             target_repo.upsert_vehicle_detail(registro, detalle, ruta_pdf, fecha_hora_inicio, fecha_hora_fin)
+            logger.info(f"Detalle del vehículo {placa} guardado en NocoDB.")
 
             # Capturar pantalla
             screenshot_path = capture.save_screenshot_bytes(
@@ -130,21 +155,29 @@ def main():
             image_paths.append(screenshot_path)
 
             print(f"Placa {placa} procesada")
+            logger.info(f"Placa {placa} procesada y captura guardada.")
 
         # 9️⃣ Generar PDF
         pdf_path = pdf.consolidate_images_to_pdf(image_paths, num_doc)
         print(f"\n PDF generado: {pdf_path}")
+        logger.info(f"\n PDF generado exitosamente: {pdf_path}")
         # 🔟 Marcar como exitoso
         source_repo.marcar_exitoso(registro)
         target_repo.update_ruta_pdf_by_proceso(registro, pdf_path)
         print("\n Proceso completado exitosamente!")
+        logger.info("\n Proceso completado exitosamente!")
 
     except Exception as e:
         print(f"\n Error durante el proceso: {e}")
+        logger.error(
+            f"\n Error inesperado durante el proceso para ID {registro.get('Id')}: {e}",
+            exc_info=True,
+        )
         source_repo.marcar_fallido(registro, F"Error inesperado: {str(e)}")
     finally:
         web_client.close()
         print("\n Sesión finalizada")
+        logger.info("\n Sesión de WebClient finalizada")
 
 
 if __name__ == "__main__":

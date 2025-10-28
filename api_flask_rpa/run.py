@@ -16,6 +16,7 @@ def create_app():
     # ensure folders
     os.makedirs(settings.SCREENSHOT_PATH, exist_ok=True)
     os.makedirs(settings.PDF_DIR, exist_ok=True)
+    os.makedirs(settings.LOG_PATH, exist_ok=True)
 
     return app
 
