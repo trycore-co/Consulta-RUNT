@@ -432,18 +432,17 @@ class ScrapingService:
             logger.warning(f"Error navegando por el menú: {e}")
             return False
 
-    def abrir_ficha_y_extraer(self, placa: str) -> dict:
+    def abrir_ficha_y_extraer(self, placa: str):
         """
         Abre la ficha de detalle del vehículo y extrae todos los campos visibles.
         Retorna un diccionario con la información del vehículo.
         """
+        s = self.selectors["consulta_propietario"]
         s_det = self.selectors["detalle_vehiculo"]
         s_panel = self.selectors["consulta_propietario"]["panel_lista_placas"]
         detalle = {"Placa": placa}
 
         try:
-            self.web_client.driver.execute_script("window.scrollTo(0, 0);")  # Vuelve a la cima
-            time.sleep(0.5)
             logger.info(f"Abriendo ficha de placa: {placa}")
             # Clic en la placa dentro del panel de resultados
             xpath_placa = (
@@ -455,7 +454,7 @@ class ScrapingService:
 
             # Esperar contenedor de detalle
             contenedor = self.web_client.find_by_selector(
-                s_det["contenedor_detalle"], timeout=30
+                s_det["contenedor_detalle"], timeout=10
             )
             bloques = self.web_client.find_all_by_selector(s_det["bloque_detalle"])
 
@@ -466,6 +465,7 @@ class ScrapingService:
             time.sleep(1.0)
 
             # Extraer pares clave-valor de los bloques de detalle
+            png_bytes = self.tomar_screenshot_bytes()
             logger.info(f"Extrayendo datos de placa: {placa}")
             for block in bloques:
                 labels = block.find_elements(
@@ -478,7 +478,12 @@ class ScrapingService:
                         detalle[key] = val
 
             logger.info("Campos extraídos: %d", len(detalle))
-            return detalle
+
+            self.web_client.driver.execute_script(
+                "document.querySelector('mat-select').scrollIntoView({block: 'center'});"
+            )
+            self.web_client.click_selector(s["selector_placa"], timeout=5)
+            return (detalle, png_bytes)
 
         except Exception as e:
             logger.error(
