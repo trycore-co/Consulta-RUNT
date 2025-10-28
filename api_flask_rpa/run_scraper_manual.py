@@ -82,17 +82,28 @@ def main():
         print(f"\n🔄 Consultando placas para {tipo_doc}: {num_doc}")
         placas, screenshot = scraper.consultar_por_propietario(tipo_doc, num_doc)
 
+        correlation_id = str(uuid.uuid4())
+        image_paths = []
+
         if not placas:
             print(" No se encontraron placas")
             source_repo.marcar_fallido(registro, "No se encontraron placas asociadas")
-            return
+            screenshot_path = capture.save_screenshot_bytes(
+                screenshot,
+                correlation_id,
+                num_doc
+            )
+            image_paths.append(screenshot_path)
+            pdf_path = pdf.consolidate_images_to_pdf(image_paths, num_doc)
+            return {
+                "id": registro.get("Id"),
+                "status": "exitoso",
+                "pdf": pdf_path,
+            }
 
         print(f"Placas encontradas: {placas}")
 
         # 8️⃣ Procesar cada placa
-        correlation_id = str(uuid.uuid4())
-        image_paths = []
-
         # Guardar screenshot de lista de placas
         screenshot_path = capture.save_screenshot_bytes(
             screenshot,

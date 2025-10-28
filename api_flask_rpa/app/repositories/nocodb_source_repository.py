@@ -60,8 +60,7 @@ class NocoDbSourceRepository:
         record_id = self._get_record_id(record)
         payload = {
             "Id": record_id,
-            "EstadoGestion": "No Exitoso error controlado",
-            "Observacion": motivo,
+            "EstadoGestion": motivo,
         }
         self.client.update_record(
             self.table_insumo,

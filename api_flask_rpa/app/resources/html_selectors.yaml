@@ -43,7 +43,7 @@ home:
     value: "//p[contains(., 'Te damos la bienvenida')]"
   cerrar_navegacion_guiada:
     by: "xpath"
-    value: "//button[@aria-label='Cerrar']"  
+    value: "//button[@aria-label='Salir del tour']"  
   menu_consultas:
     by: "xpath"
     value: "//button[@aria-label='Abrir menú']"
