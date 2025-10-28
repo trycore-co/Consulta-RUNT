@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from app.infrastructure.email_client import EmailClient
@@ -36,6 +36,12 @@ class NotificationService:
             datetime.now
         )  # para usar {{ now().year }} en templates
 
+    def set_recipients(self, recipients: List[str]):
+        """Establece la lista de correos destinatarios en el cliente de correo."""
+        if self._email_enabled:
+            # Llama al nuevo método de EmailClient
+            self.email_client.set_recipients(recipients)
+
     def _render_template(self, template_name: str, context: dict) -> str:
         template = self.env.get_template(template_name)
         context["now"] = datetime.now
@@ -56,15 +62,23 @@ class NotificationService:
                 "mensaje": f"Se ha iniciado la ejecución del lote. Pendientes a procesar: {total_pendientes}",
             },
         )
-        self.email_client.send_email(
-            "IMPORTANTE - RPA_RUNT - Inicio de ejecución del Bot", html
-        )
+        subject = "IMPORTANTE - RPA_RUNT - Inicio de ejecución del Bot"
+        self.email_client.send_email(subject, html)
 
-    def send_end_notification(self, exitosos: int, errores: int, pdf_path: Optional[str]=None):
+    def send_end_notification(
+        self,
+        exitosos: int,
+        errores: int,
+        pdf_path: Optional[str] = None,
+        adjuntos: Optional[List[str]] = None,
+        pdf_base_path: Optional[str] = None,
+    ):
         """Envía correo de finalización del proceso."""
         if not self._email_enabled:
             logger.info("Notificación de fin omitida: EmailClient no configurado")
             return
+
+        total_procesados = exitosos + errores
 
         html = self._render_template(
             "summary_batch.html.j2",
@@ -72,14 +86,17 @@ class NotificationService:
                 "titulo": "IMPORTANTE - RPA_RUNT - Fin de ejecución del Bot",
                 "exitosos": exitosos,
                 "errores": errores,
+                "total": total_procesados,
                 "pdf_path": pdf_path,
+                "pdf_storage_path": pdf_base_path,
+                "pdfs_adjuntos": len(adjuntos) if adjuntos else 0,
                 "estado": "Finalizado",
             },
         )
-        attachments = [pdf_path] if pdf_path else []
-        self.email_client.send_email(
-            "IMPORTANTE - RPA_RUNT - Fin de ejecución del Bot", html, attachments=attachments
-        )
+        attachments = [pdf_path] if pdf_path else [] or adjuntos if adjuntos else []
+        subject = f"IMPORTANTE - RPA_RUNT - Fin de ejecución del Bot: Exitosos: {exitosos} / Error: {errores}"
+
+        self.email_client.send_email(subject, html, attachments=attachments)
 
     def send_failure_controlled(
         self,
