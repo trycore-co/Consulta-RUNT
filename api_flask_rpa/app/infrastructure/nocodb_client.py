@@ -138,16 +138,10 @@ class NocoDBClient:
             logger.error("Error en request update_records_with_where: %s", str(e))
             raise
 
-    def update_record_by_id(
-        self, table: str, row_id: str | int, payload: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Actualiza un registro por su rowId en NocoDB.
-        PATCH /api/v2/tables/{table}/records/{rowId}
-        """
-        url = f"{self.base_url}/api/v2/tables/{table}/records/{row_id}"
-        # Evitar intentar cambiar el Id si viene en el payload
-        payload = {k: v for k, v in payload.items() if k.lower() != "id"}
+    def update_record_by_id(self, table: str, row_id: str | int, payload: Dict[str, Any]) -> Dict[str, Any]:
+        url = f"{self.base_url}/api/v2/tables/{table}/records"
+        payload = {k: v for k, v in payload.items() if k.lower() != "id"}  # no tocar el Id
+        payload["Id"] = row_id
         r = self.session.patch(url, json=payload, timeout=30)
         r.raise_for_status()
         try:

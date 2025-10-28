@@ -99,84 +99,38 @@ class NocoDbTargetRepository:
             or source_record.get("NumIdentificacion")
         )
         if not num_identificacion:
-            logger.error(
-                "No se pudo obtener NumIdentificacion del registro fuente para actualizar el PDF."
-            )
+            logger.error("No se pudo obtener NumIdentificacion del registro fuente para actualizar el PDF.")
             return {"msg": "Error: NumIdentificacion no encontrado"}
 
         # 2) Reconstruir NumUnicoProceso con fecha actual
         fecha_actual = datetime.now().strftime("%Y-%m-%d")
         num_unico_proceso = f"{num_identificacion}_{fecha_actual}"
 
-        # 3) Normalizar ruta y armar filtro
+        # 3) Normalizar ruta y armar filtro (usa el formato que tu list_records soporta)
         ruta_web = ruta_pdf.replace("\\", "/")
         payload = {"RutaPDF": ruta_web}
-        where_filter = f"(NumUnicoProceso,eq,{json.dumps(num_unico_proceso)})"
+        # OJO: tu list_records arma 'filter=(col,op,val)' a partir de este string plano:
+        where_filter = f"NumUnicoProceso,eq,{num_unico_proceso}"
 
-        logger.info(
-            "Actualizando RutaPDF: NumUnicoProceso=%s  RutaPDF=%s",
-            num_unico_proceso, ruta_web
-        )
+        logger.info("Actualizando RutaPDF: NumUnicoProceso=%s  RutaPDF=%s", num_unico_proceso, ruta_web)
 
-        # Intento 1: update masivo con WHERE
+        # 4) Listar filas y actualizar por Id (PATCH /records/{rowId})
         try:
-            if hasattr(self.client, "update_records_with_where"):
-                resp = self.client.update_records_with_where(
-                    self.table,
-                    payload=payload,
-                    where=where_filter,
-                )
-                return {
-                    "msg": "OK (where)",
-                    "NumUnicoProceso": num_unico_proceso,
-                    "RutaPDF": ruta_web,
-                    "response": resp,
-                }
-        except Exception as e:
-            # Log del cuerpo de error si viene de requests/httpx
-            if hasattr(e, "response") and getattr(e.response, "text", None):
-                logger.error(
-                    "Fallo update_records_with_where: %s | body=%s",
-                    e, e.response.text
-                )
-            else:
-                logger.error("Fallo update_records_with_where: %s", e)
-            # continuar al fallback
-
-        # Fallback: listar IDs y hacer PATCH por Id
-        try:
-            # Quitar 'fields' porque tu cliente no lo soporta
-            rows = self.client.list_records(
-                self.table,
-                where=where_filter,
-                limit=1000,
-            )
-
-            # Dependiendo del cliente, puede devolver {"list": [...]} o una lista directa
+            rows = self.client.list_records(self.table, where=where_filter, limit=1000)
+            # Tu cliente devuelve lista directa o {"list": [...]}; maneja ambos casos:
             list_rows = rows.get("list") if isinstance(rows, dict) else rows
             ids = [r.get("Id") for r in list_rows if r.get("Id")]
 
             if not ids:
-                logger.warning(
-                    "Sin filas que actualizar (NumUnicoProceso=%s)", num_unico_proceso
-                )
-                return {
-                    "msg": "Sin filas que actualizar",
-                    "count": 0,
-                    "NumUnicoProceso": num_unico_proceso,
-                }
+                logger.warning("Sin filas que actualizar (NumUnicoProceso=%s)", num_unico_proceso)
+                return {"msg": "Sin filas que actualizar", "count": 0, "NumUnicoProceso": num_unico_proceso}
 
             updated = 0
             for row_id in ids:
                 self.client.update_record_by_id(self.table, row_id, payload)
                 updated += 1
 
-            return {
-                "msg": "OK (by-id)",
-                "count": updated,
-                "NumUnicoProceso": num_unico_proceso,
-                "RutaPDF": ruta_web,
-            }
+            return {"msg": "OK (by-id)", "count": updated, "NumUnicoProceso": num_unico_proceso, "RutaPDF": ruta_web}
 
         except Exception as e:
             if hasattr(e, "response") and getattr(e.response, "text", None):
