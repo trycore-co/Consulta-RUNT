@@ -11,9 +11,11 @@ from app.repositories.nocodb_target_repository import NocoDbTargetRepository
 from app.services.capture_service import CaptureService
 from app.services.pdf_service import PDFService
 from config import settings
+from typing import List
 import time
 import uuid
 from datetime import datetime
+import pytz  # <-- NUEVO: para fijar zona horaria Bogotá
 
 
 def test_nocodb_connection():
@@ -61,7 +63,13 @@ def main():
     scraper = ScrapingService(web_client)
     capture = CaptureService()
     pdf = PDFService()
-    fecha_hora_inicio = datetime.now().isoformat()
+
+    # 🕒 NUEVO BLOQUE - Calcular una sola vez la fecha y el NumUnicoProceso
+    tz = pytz.timezone("America/Bogota")
+    fecha_hora_inicio = datetime.now(tz)
+    num_unico_proceso = f"{registro.get('NumIdentificacion')}_{fecha_hora_inicio.strftime('%Y-%m-%d')}"
+    print(f"🆔 NumUnicoProceso asignado: {num_unico_proceso}")
+
     try:
         # 5️⃣ Login en el portal
         print("\n Iniciando sesión en RUNT...")
@@ -90,6 +98,7 @@ def main():
         print(f"Placas encontradas: {placas}")
 
         # 8️⃣ Procesar cada placa
+        created_ids: List[int] = []   # <-- NUEVO: acumulador de IDs creados
         correlation_id = str(uuid.uuid4())
         image_paths = []
 
@@ -103,19 +112,25 @@ def main():
 
         for placa in placas:
             print(f"\n Procesando placa: {placa}")
-            # Extraer detalles
             detalle = scraper.abrir_ficha_y_extraer(placa)
+            fecha_hora_fin = datetime.now(tz)
             ruta_pdf = None
-            fecha_hora_fin = datetime.now().isoformat()
-            # Guardar en NocoDB
-            target_repo.upsert_vehicle_detail(registro, detalle, ruta_pdf, fecha_hora_inicio, fecha_hora_fin)
 
-            # Capturar pantalla
+            # insertar detalles y ACUMULAR IDs creados
+            ids = target_repo.upsert_vehicle_detail(
+                registro,
+                detalle,
+                ruta_pdf,
+                fecha_hora_inicio.isoformat(),
+                fecha_hora_fin.isoformat(),
+                num_unico_proceso
+            )
+            created_ids.extend(ids)
+
+            # Capturar pantalla de la ficha
             screenshot = scraper.tomar_screenshot_bytes()
             screenshot_path = capture.save_screenshot_bytes(
-                screenshot,
-                correlation_id,
-                placa
+                screenshot, correlation_id, placa
             )
             image_paths.append(screenshot_path)
 
@@ -124,9 +139,13 @@ def main():
         # 9️⃣ Generar PDF
         pdf_path = pdf.consolidate_images_to_pdf(image_paths, num_doc)
         print(f"\n PDF generado: {pdf_path}")
-        # 🔟 Marcar como exitoso
+
+        # 🔁 ACTUALIZAR RutaPDF POR ID (definitivo, sin 'where')
+        result = target_repo.update_ruta_pdf_by_ids(created_ids, pdf_path)
+        print(f"Actualizar PDF por Ids => {result}")
+
+        # 🔟 Marcar como exitoso y actualizar RutaPDF con el mismo NumUnicoProceso
         source_repo.marcar_exitoso(registro)
-        target_repo.update_ruta_pdf_by_proceso(registro, pdf_path)
         print("\n Proceso completado exitosamente!")
 
     except Exception as e:
