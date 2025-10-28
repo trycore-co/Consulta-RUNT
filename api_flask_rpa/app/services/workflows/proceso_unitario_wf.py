@@ -136,15 +136,29 @@ class ProcesoUnitarioWF:
                         self.correlation_id,
                         numero,  # Identificador único para esta captura: [correlation_id]_[NumeroIdentificacion].png
                     )
+                    image_paths = []
+                    image_paths.append(screenshot_list_path)
+
                     logger.info(
                         f"Captura de lista de placas guardada en: {screenshot_list_path}"
                     )
                     if not placas:
                         self.scraper.volver_a_inicio()
                         self.source_repo.marcar_fallido(self.record, "No Encontrado")
+                        pdf_path = self.pdf.consolidate_images_to_pdf(
+                            image_paths, numero
+                        )
+                        self.notifier.send_end_notification(
+                            exitosos=1,
+                            errores=0,
+                            pdf_path=pdf_path,  # Contamos como un proceso terminado con éxito de consulta
+                        )
+                        return {
+                            "id": record_id,
+                            "status": "exitoso",
+                            "pdf": pdf_path,
+                        }
 
-                    image_paths = []
-                    image_paths.append(screenshot_list_path)
                     for placa in placas:
                         detalle = self.scraper.abrir_ficha_y_extraer(placa)
                         fecha_hora_fin = datetime.now().isoformat()
