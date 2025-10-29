@@ -70,6 +70,18 @@ popup_error_ruta:
 
 consulta_propietario:
   url_consulta: "#/consulta-automotores-por-propietario/consulta-vehiculo"
+  contenedor_consulta:
+    by: "xpath"
+    value: "//div[@class='ng-star-inserted']"
+  formulario_consulta: 
+    by: "xpath"
+    value: "//form[@class='container-form ng-touched ng-dirty ng-valid ng-submitted']"
+  datos_generales: 
+    by: "xpath"
+    value: "//form[@class='container-form ng-valid ng-touched ng-dirty']"
+  footer: 
+    by: "xpath"
+    value: "//div[@class='container-footer']"
   select_tipo_documento:
     by: "xpath"
     value: "//*[@id='tipoDocumento']"
@@ -101,13 +113,16 @@ consulta_propietario:
 detalle_vehiculo:
   contenedor_detalle:
     by: "xpath"
-    value: "/html/body/host-runt-root/app-layout/app-theme-runt2/mat-sidenav-container/mat-sidenav-content/div/ng-component/div[2]/div[2]/div/cyrrunt-pro-mr-info-vehiculo-rna/div"
+    value: "/html/body/host-runt-root/app-layout/app-theme-runt2/mat-sidenav-container/mat-sidenav-content/div/ng-component/div[2]/div[2]/div/cyrrunt-pro-mr-info-vehiculo-rna"
   bloque_detalle:
     by: "xpath"
     value: "/html/body/host-runt-root/app-layout/app-theme-runt2/mat-sidenav-container/mat-sidenav-content/div/ng-component/div[2]/div[2]/div/cyrrunt-pro-mr-info-vehiculo-rna/div/div"
   etiquetas_datos:
     by: "tag"
     value: "label"
+  zoom_out:
+    by: "xpath"
+    value: "/html/body/host-runt-root/app-layout/app-theme-runt2/mat-sidenav-container/mat-sidenav-content/app-footer/div/div[2]/i[1]"
   # campos de ejemplo (estos se mapean dinámicamente en extraction)
   campos:
     placa: "Placa"
