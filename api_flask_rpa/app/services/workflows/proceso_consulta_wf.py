@@ -1,4 +1,5 @@
 import uuid
+import os
 from app.repositories.nocodb_source_repository import NocoDbSourceRepository
 from app.infrastructure.nocodb_client import NocoDBClient
 from app.infrastructure.web_client import WebClient
@@ -9,7 +10,6 @@ from datetime import datetime
 from app.utils.logging_utils import get_logger
 
 logger = get_logger("proceso_consulta_wf")
-notif = NotificationService()
 
 
 class ProcesoConsultaWF:
@@ -26,6 +26,17 @@ class ProcesoConsultaWF:
         """
         # 1) leer parámetros
         parametros = self.source_repo.obtener_parametros()
+        # Buscar el registro de destinatarios.
+        recipients_str = parametros.get("EmailRecipients", "")
+
+        # Parsear la cadena (asumiendo formato "correo1,correo2,correo3")
+        recipients_list = [
+            email.strip()
+            for email in recipients_str.split(",")
+            if email.strip()  # Filtra cadenas vacías
+        ]
+        # Asignar los destinatarios al NotificationService
+        self.notifier.set_recipients(recipients_list)
         ahora = datetime.now()
         hora_inicio_str = parametros.get("HoraInicio", "07:00")
         hora_fin_str = parametros.get("HoraFin", "18:00")
@@ -34,7 +45,7 @@ class ProcesoConsultaWF:
         ):
             motivo = "Ejecución omitida: fuera de horario o día no hábil."
             logger.info(motivo)
-            notif.send_failure_controlled(None, motivo, None)
+            self.notifier.send_failure_controlled(None, motivo, None)
             return {
                 "processed": 0,
                 "message": "Fuera de horario laboral o día no hábil.",
@@ -44,7 +55,7 @@ class ProcesoConsultaWF:
         limit = int(parametros.get("LimitePendientes", 50) or 50)
         pendientes = self.source_repo.obtener_pendientes(limit=limit)
         logger.info("Pendientes encontrados: %d", len(pendientes))
-        notif.send_start_notification(total_pendientes=len(pendientes))
+        self.notifier.send_start_notification(total_pendientes=len(pendientes))
 
         # parámetros comunes que pasaremos downstream
         reintentos_login = int(parametros.get("ReintentosLogin", 2) or 2)
@@ -56,6 +67,7 @@ class ProcesoConsultaWF:
         # Contadores y resultados
         ok_count, error_count = 0, 0
         results = []
+        all_pdfs = []
 
         is_logged_in = False
 
@@ -74,6 +86,7 @@ class ProcesoConsultaWF:
                     nocodb_client=self.nocodb_client,
                     web_client=self.web_client,
                     correlation_id=corr_id,
+                    notifier=self.notifier,
                     session_active=is_logged_in,
                     reintentos_login=reintentos_login,
                     reintentos_proceso=reintentos_proceso,
@@ -101,6 +114,8 @@ class ProcesoConsultaWF:
                 # Solo marcar como exitoso si el status es "exitoso"
                 if resultado.get("status") == "exitoso":
                     ok_count += 1
+                    if resultado.get("pdf"):
+                        all_pdfs.append(resultado["pdf"])
                 else:
                     # El workflow unitario ya marcó el estado apropiado (login_failed, no_encontrado, error)
                     error_count += 1
@@ -110,7 +125,7 @@ class ProcesoConsultaWF:
                 logger.exception(f"Error procesando registro {record_id}: {e}")
                 error_count += 1
                 screenshot = self.web_client.screenshot_save(f"./data/capturas/error_{record_id}.png")
-                notif.send_failure_unexpected(
+                self.notifier.send_failure_unexpected(
                     record_id=str(record_id), error=str(e), last_screenshot=screenshot
                 )
                 try:
@@ -121,10 +136,22 @@ class ProcesoConsultaWF:
 
         logger.info(f"Lote completado. OK={ok_count}, ERROR={error_count}")
 
-        #  self.notifier.send_end_notification(exitosos=ok_count, errores=error_count, pdf_path=pdf_path)
+        # Determinar la ruta base de los PDFs
+        pdf_base_path = None
+        if all_pdfs:
+            # Extrae la ruta del directorio del primer PDF generado.
+            pdf_base_path = os.path.dirname(all_pdfs[0])
+
+        self.notifier.send_end_notification(
+            exitosos=ok_count,
+            errores=error_count,
+            adjuntos=all_pdfs,  # Enviamos la lista de PDFs generados
+            pdf_base_path=pdf_base_path,
+        )
         return {
             "procesados": ok_count,
             "errores": error_count,
             "mensaje": "Ejecución completada correctamente",
             "detalles": results,
+            "pdfs_generados": all_pdfs,
         }

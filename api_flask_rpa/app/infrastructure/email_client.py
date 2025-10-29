@@ -21,11 +21,18 @@ class EmailClient:
         self.authority = settings.AUTHORITY
         self.scope = settings.SCOPE
         self.sender = settings.USER_EMAIL
-        self.receiver = settings.RECEIVER_EMAIL
+        self.receiver_emails: List[str] = []
         self.token_url = (
             f"{self.authority.rstrip('/')}/{self.tenant_id}/oauth2/v2.0/token"
         )
-        logger.info(f"EmailClient inicializado para remitente: {self.sender}, destinatario: {self.receiver}")
+        logger.info(f"EmailClient inicializado para remitente: {self.sender}")
+
+    def set_recipients(self, recipients: List[str]):
+        """Establece la lista de destinatarios leída de NocoDB."""
+        self.receiver_emails = recipients
+        logger.info(
+            f"Destinatarios de correo actualizados: {', '.join(self.receiver_emails)}"
+        )
 
     def _get_access_token(self) -> str:
 
@@ -63,6 +70,12 @@ class EmailClient:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         }
+        # Lista de destinatarios a usar (si 'to' no se pasa, usa la lista de self.receiver_emails)
+        destinatarios_final = to or self.receiver_emails
+
+        if not destinatarios_final:
+            logger.warning("No hay destinatarios configurados. Correo no enviado.")
+            return
 
         # Preparar cuerpo del mensaje
         message = {
@@ -71,7 +84,7 @@ class EmailClient:
                 "body": {"contentType": "HTML", "content": html_body},
                 "toRecipients": [
                     {"emailAddress": {"address": addr}}
-                    for addr in (to or [self.receiver])
+                    for addr in destinatarios_final  # Usar la lista final
                 ],
             },
             "saveToSentItems": "true",
@@ -116,4 +129,4 @@ class EmailClient:
             logger.error(f"Error enviando correo: {response.text}")
             response.raise_for_status()
 
-        logger.info(f"Correo enviado correctamente a: {to or [self.receiver]}")
+        logger.info(f"Correo enviado correctamente a: {', '.join(destinatarios_final)}")

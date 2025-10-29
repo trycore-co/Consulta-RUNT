@@ -20,6 +20,7 @@ class ProcesoUnitarioWF:
         nocodb_client: NocoDBClient,
         web_client: WebClient,
         correlation_id: str,
+        notifier: NotificationService,
         session_active: bool = False,
         reintentos_login: int = 3,
         reintentos_proceso: int = 2,
@@ -42,7 +43,7 @@ class ProcesoUnitarioWF:
         self.capture = CaptureService()
         self.pdf = PDFService()
         # self.email_client = EmailClient()
-        self.notifier = NotificationService()
+        self.notifier = notifier
 
         # parámetros dinámicos
         self.reintentos_login = max(1, int(reintentos_login))
@@ -99,8 +100,6 @@ class ProcesoUnitarioWF:
         # Marcar como “Procesando” en Noco
         self.source_repo.marcar_en_proceso(self.record)
 
-        self.notifier.send_start_notification(1)  # Notificación de inicio unitario
-
         try:
             from config import settings
             if not self.session_active:
@@ -148,11 +147,7 @@ class ProcesoUnitarioWF:
                         pdf_path = self.pdf.consolidate_images_to_pdf(
                             image_paths, numero
                         )
-                        self.notifier.send_end_notification(
-                            exitosos=1,
-                            errores=0,
-                            pdf_path=pdf_path,  # Contamos como un proceso terminado con éxito de consulta
-                        )
+
                         return {
                             "id": record_id,
                             "status": "exitoso",
@@ -173,9 +168,6 @@ class ProcesoUnitarioWF:
                     self.source_repo.marcar_exitoso(self.record)
                     self.target_repo.update_ruta_pdf_by_proceso(self.record, pdf_path)
 
-                    self.notifier.send_end_notification(
-                        exitosos=1, errores=0, pdf_path=pdf_path
-                    )  # Notificación final
                     return {"id": record_id, "status": "exitoso", "pdf": pdf_path}
 
                 except Exception as e:
@@ -190,14 +182,14 @@ class ProcesoUnitarioWF:
                             error=str(e),
                             last_screenshot=last_scr,
                         )
-                        self.notifier.send_end_notification(exitosos=0, errores=1)
+
                         return {"id": record_id, "status": "error", "error": str(e)}
                     time.sleep(2 * intento)  # backoff exponencial
 
         except Exception as exc:
             logger.exception(f"Error inesperado en workflow unitario para id={record_id}")
             try:
-                self.source_repo.marcar_fallido(self.record, F"Error inesperado: {str(exc)}")
+                self.source_repo.marcar_fallido(self.record, f"Error inesperado: {str(exc)}")
             except Exception:
                 pass
             last_screens = self.capture.list_images_for_correlation(self.correlation_id)
@@ -207,5 +199,4 @@ class ProcesoUnitarioWF:
                 error=str(exc),
                 last_screenshot=last_scr,
             )
-            self.notifier.send_end_notification(exitosos=0, errores=1)
             return {"id": record_id, "status": "error", "error": str(exc)}

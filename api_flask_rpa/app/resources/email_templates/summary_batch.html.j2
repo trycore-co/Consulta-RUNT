@@ -22,6 +22,13 @@
     {% if pdf_path %}
       <p>📎 Se adjunta el reporte generado: {{ pdf_path }}</p>
     {% endif %}
+    {% if pdfs_adjuntos %}
+      <p>📎 Se adjuntan los reportes generados: {{ pdfs_adjuntos }}</p>
+    {% endif %}
+    {% if pdf_storage_path %}
+      <p>📎 La ruta de almacenamiento local donde se encuentran estos archivos generados es: {{ pdf_storage_path }}</p>
+    {% endif %}
+    
   </div>
 
   <div class="footer">
