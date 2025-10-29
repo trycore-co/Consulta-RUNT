@@ -10,6 +10,7 @@ from app.repositories.nocodb_source_repository import NocoDbSourceRepository
 from app.repositories.nocodb_target_repository import NocoDbTargetRepository
 from app.services.capture_service import CaptureService
 from app.services.pdf_service import PDFService
+from app.utils.limpiar_nit import limpiar_nit_sin_dv
 from config import settings
 import time
 import uuid
@@ -96,7 +97,13 @@ def main():
 
         # 7️⃣ Consultar placas
         tipo_doc = registro.get('TipoIdentificacion')
-        num_doc = registro.get('NumIdentificacion')
+        numero = registro.get("NumIdentificacion")
+        numero_str = str(numero)
+        num_doc = limpiar_nit_sin_dv(numero_str, tipo_doc)
+        print(f"ID {registro.get('Id')} - Documento original: {numero}, "
+            f"Documento limpio para consulta: {num_doc}")
+        logger.info(f"ID {registro.get('Id')} - Documento original: {numero}, "
+            f"Documento limpio para consulta: {num_doc}")
 
         print(f"\n🔄 Consultando placas para {tipo_doc}: {num_doc}")
         logger.info(f"\n🔄 Consultando placas para {tipo_doc}: {num_doc}")
