@@ -77,6 +77,7 @@ class ScrapingService:
                 logger.warning(
                     f"Error al verificar estado de sesión (no fatal): {e}. Se procede con login."
                 )
+            
             self.web_client.click_selector(s["boton_continuar"])
             logger.info("Ingresando credenciales...")
             self.web_client.send_keys_selector(s["input_usuario"], username)
@@ -284,7 +285,7 @@ class ScrapingService:
         """
         Consulta las placas asociadas a un propietario en RUNT PRO.
         Primero intenta navegar por el menú.
-        Si no esta el menú visible, navega a la url derectamente.
+        Si no esta el menú visible, navega a la url directamente.
         Retorna lista de placas encontradas.
         """
         s = self.selectors["consulta_propietario"]
@@ -356,17 +357,30 @@ class ScrapingService:
 
             self.web_client.send_keys_selector(s["input_numero_documento"], numero_doc)
             self.web_client.click_selector(s["boton_consultar"])
+            logger.info("Se dio clic en consultar")
         except Exception as e:
             logger.error("Error ingresando datos de propietario: %s", e)
             raise
 
         # Esperar el selector de placa
+        selector_placa = s["selector_placa"]
+        elemento_encontrado = False
         try:
-            placas_ok = self.web_client.wait_until_is_visible(
-                s["selector_placa"], timeout=5
-            )
-            logger.info(f"Selector de placas visible,{placas_ok}")
-            if not placas_ok:
+            try:
+                # 1. Intento de espera (timeout corto es más rápido si está visible de inmediato)
+                self.web_client.wait_until_is_visible(selector_placa, timeout=5)
+                elemento_encontrado = True
+            except TimeoutException:
+                # Si la espera falla, intentamos una búsqueda directa por más tiempo (opcional)
+                try:
+                    self.web_client.find_by_selector(selector_placa, timeout=3)
+                    elemento_encontrado = True
+                except Exception:
+                    # El elemento realmente no está
+                    pass
+
+            logger.info(f"Selector de placas visible,{elemento_encontrado}")
+            if not elemento_encontrado:
                 s_consulta = self.selectors["consulta_propietario"]
                 ok = self.web_client.wait_until_is_visible(
                     s_consulta["alerta_modal"], timeout=5
@@ -378,6 +392,9 @@ class ScrapingService:
                     )
                     time.sleep(1)
                     return ([], png_bytes)
+                else:
+                    logger.error("No se encontró alerta modal tras consulta fallida.")
+                    return []
             else:
                 self.web_client.click_selector(s["selector_placa"], timeout=5)
 
@@ -412,16 +429,16 @@ class ScrapingService:
         try:
             logger.info("Intentando navegación por el menú...")
             # Abrir menú lateral
-            self.web_client.click_selector(s_home["menu_consultas"], timeout=5)
-            time.sleep(5)
+            self.web_client.click_selector(s_home["menu_consultas"], timeout=3)
+            time.sleep(3)
 
             # Click en "Consulta información"
-            self.web_client.click_selector(s_home["consultar_informacion"], timeout=5)
-            time.sleep(5)
+            self.web_client.click_selector(s_home["consultar_informacion"], timeout=3)
+            time.sleep(3)
 
             # Click en "Consulta de automotores por propietario"
             self.web_client.click_selector(
-                s_home["opcion_automotores_propietario"], timeout=5
+                s_home["opcion_automotores_propietario"], timeout=3
             )
             time.sleep(3)
 
@@ -454,10 +471,36 @@ class ScrapingService:
 
             # Esperar contenedor de detalle
             contenedor = self.web_client.find_by_selector(
-                s_det["contenedor_detalle"], timeout=10
+                s_det["contenedor_detalle"], timeout=5
             )
             bloques = self.web_client.find_all_by_selector(s_det["bloque_detalle"])
 
+            formulario_consulta = self.web_client.find_by_selector(
+                s["formulario_consulta"], timeout=5
+            )
+            self.web_client.driver.execute_script(
+                "arguments[0].style.zoom = '20%';", formulario_consulta
+            )
+            time.sleep(1.0)
+
+            datos_generales = self.web_client.find_by_selector(
+                s["datos_generales"], timeout=5
+            )
+            self.web_client.driver.execute_script(
+                "arguments[0].style.zoom = '20%';", datos_generales
+            )
+            time.sleep(1.0)
+
+            footer = self.web_client.find_by_selector(s["footer"], timeout=5)
+            self.web_client.driver.execute_script(
+                "arguments[0].style.zoom = '20%';", footer
+            )
+            time.sleep(1.0)
+
+            self.web_client.driver.execute_script(
+                "arguments[0].style.zoom = '60%';", contenedor
+            )
+            time.sleep(1.0)
             # Asegura bajar hasta el final
             self.web_client.driver.execute_script(
                 "arguments[0].scrollIntoView({block: 'center'});", contenedor
@@ -479,9 +522,21 @@ class ScrapingService:
 
             logger.info("Campos extraídos: %d", len(detalle))
 
+            # PASO 2: RESTAURAR EL ZOOM AL 100% ANTES DE CONTINUAR
+            logger.info("Restaurando zoom al 100% para el resto del flujo.")
             self.web_client.driver.execute_script(
-                "document.querySelector('mat-select').scrollIntoView({block: 'center'});"
+                "arguments[0].style.zoom = '100%';", formulario_consulta
             )
+            self.web_client.driver.execute_script(
+                "arguments[0].style.zoom = '100%';", datos_generales
+            )
+            self.web_client.driver.execute_script(
+                "arguments[0].style.zoom = '100%';", footer
+            )
+            self.web_client.driver.execute_script(
+                "arguments[0].style.zoom = '100%';", contenedor
+            )
+
             self.web_client.click_selector(s["selector_placa"], timeout=5)
             return (detalle, png_bytes)
 
@@ -489,6 +544,10 @@ class ScrapingService:
             logger.error(
                 "Error al abrir ficha o extraer datos de placa %s: %s", placa, e
             )
+            try:
+                self.web_client.driver.execute_script("document.body.style.zoom = '100%';")
+            except Exception:
+                pass  # No pasa nada si el driver ya está roto o cerrado
             raise
 
     def volver_a_inicio(self):
@@ -497,6 +556,14 @@ class ScrapingService:
         Usa el índice [2] del XPath para asegurar el elemento correcto.
         """
         try:
+            s_panel = self.selectors["consulta_propietario"]["panel_lista_placas"]
+            visible = self.web_client.wait_until_is_visible(
+                s_panel, timeout=5
+            )
+            if visible:
+                self.web_client.click_selector(s_panel, timeout=5)
+                time.sleep(1)
+
             s_home = self.selectors["home"]
             logo_xpath = (
                 f"({s_home['logo']['value']})[2]"  # Selecciona el segundo elemento)
