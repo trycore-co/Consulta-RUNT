@@ -87,7 +87,7 @@ def main():
 
         if not placas:
             print(" No se encontraron placas")
-            source_repo.marcar_fallido(registro, "No se encontraron placas asociadas")
+            source_repo.marcar_fallido(registro, "Error controlado: No se encontraron placas asociadas")
             screenshot_path = capture.save_screenshot_bytes(
                 screenshot,
                 correlation_id,
@@ -115,14 +115,13 @@ def main():
         for placa in placas:
             print(f"\n Procesando placa: {placa}")
             # Extraer detalles
-            detalle = scraper.abrir_ficha_y_extraer(placa)
+            detalle, screenshot = scraper.abrir_ficha_y_extraer(placa)
             ruta_pdf = None
             fecha_hora_fin = datetime.now().isoformat()
             # Guardar en NocoDB
             target_repo.upsert_vehicle_detail(registro, detalle, ruta_pdf, fecha_hora_inicio, fecha_hora_fin)
 
             # Capturar pantalla
-            screenshot = scraper.tomar_screenshot_bytes()
             screenshot_path = capture.save_screenshot_bytes(
                 screenshot,
                 correlation_id,
@@ -142,7 +141,7 @@ def main():
 
     except Exception as e:
         print(f"\n Error durante el proceso: {e}")
-        source_repo.marcar_fallido(registro, str(e))
+        source_repo.marcar_fallido(registro, F"Error inesperado: {str(e)}")
     finally:
         web_client.close()
         print("\n Sesión finalizada")

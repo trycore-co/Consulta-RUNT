@@ -144,7 +144,7 @@ class ProcesoUnitarioWF:
                     )
                     if not placas:
                         self.scraper.volver_a_inicio()
-                        self.source_repo.marcar_fallido(self.record, "No Encontrado")
+                        self.source_repo.marcar_fallido(self.record, "Error Controlado: No Encontrado")
                         pdf_path = self.pdf.consolidate_images_to_pdf(
                             image_paths, numero
                         )
@@ -160,10 +160,9 @@ class ProcesoUnitarioWF:
                         }
 
                     for placa in placas:
-                        detalle = self.scraper.abrir_ficha_y_extraer(placa)
+                        detalle, png = self.scraper.abrir_ficha_y_extraer(placa)
                         fecha_hora_fin = datetime.now().isoformat()
                         self.target_repo.upsert_vehicle_detail(self.record, vehicle_details=detalle, ruta_pdf=None, fecha_inicio=fecha_hora_inicio, fecha_fin=fecha_hora_fin)
-                        png = self.scraper.tomar_screenshot_bytes()
                         saved = self.capture.save_screenshot_bytes(
                             png, self.correlation_id, placa
                         )
@@ -185,7 +184,7 @@ class ProcesoUnitarioWF:
                     last_scr = last_screens[-1] if last_screens else None
 
                     if intento >= self.reintentos_proceso:
-                        self.source_repo.marcar_fallido(self.record, str(e))
+                        self.source_repo.marcar_fallido(self.record, f"Error inesperado: {str(e)}")  # type: ignore ("str(e))
                         self.notifier.send_failure_unexpected(
                             record_id=str(record_id),
                             error=str(e),
@@ -198,7 +197,7 @@ class ProcesoUnitarioWF:
         except Exception as exc:
             logger.exception(f"Error inesperado en workflow unitario para id={record_id}")
             try:
-                self.source_repo.marcar_fallido(self.record, str(exc))
+                self.source_repo.marcar_fallido(self.record, F"Error inesperado: {str(exc)}")
             except Exception:
                 pass
             last_screens = self.capture.list_images_for_correlation(self.correlation_id)
