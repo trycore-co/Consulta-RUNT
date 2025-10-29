@@ -96,6 +96,7 @@ def main():
         logger.info(f"Registro {registro.get('Id')} marcado 'en proceso'.")
 
         # 7️⃣ Consultar placas
+        nombre = registro.get("NombrePropietario")
         tipo_doc = registro.get('TipoIdentificacion')
         numero = registro.get("NumIdentificacion")
         numero_str = str(numero)
@@ -107,14 +108,14 @@ def main():
 
         print(f"\n🔄 Consultando placas para {tipo_doc}: {num_doc}")
         logger.info(f"\n🔄 Consultando placas para {tipo_doc}: {num_doc}")
-        placas, screenshot = scraper.consultar_por_propietario(tipo_doc, num_doc)
+        placas, screenshot = scraper.consultar_por_propietario(tipo_doc, num_doc, nombre)
 
         correlation_id = str(uuid.uuid4())
         image_paths = []
 
         if not placas:
             print(" No se encontraron placas")
-            logger.warning("No se encontraron placas asociadas al propietario.")
+            logger.warning("No se encontraron placas asociadas al propietario o el nombre no coincide.")
             source_repo.marcar_fallido(registro, "Error controlado: No se encontraron placas asociadas")
             screenshot_path = capture.save_screenshot_bytes(
                 screenshot,

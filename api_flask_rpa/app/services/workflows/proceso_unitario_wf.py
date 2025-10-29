@@ -79,6 +79,17 @@ class ProcesoUnitarioWF:
         num_identificacion_original = self.record.get(
             "NumeroIdentificacion"
         ) or self.record.get("NumIdentificacion")
+        nombre = self.record.get("NombrePropietario")
+        if not nombre:
+            # Manejo de error si el nombre es nulo o vacío
+            self.source_repo.marcar_fallido(
+                self.record, "Campo NombrePropietario es nulo."
+            )
+            return {
+                "id": record_id,
+                "status": "error",
+                "error": "Falta NombrePropietario",
+            }
         # Aplicar la función para obtener el número listo para la consulta
         num_identificacion_str = (
             str(num_identificacion_original)
@@ -140,7 +151,7 @@ class ProcesoUnitarioWF:
                 try:
                     logger.info(f"Iniciando intento {intento}/{self.reintentos_proceso} para registro {record_id}")
                     placas, captura_lista_placas = (
-                        self.scraper.consultar_por_propietario(tipo, numero)
+                        self.scraper.consultar_por_propietario(tipo_doc=tipo, numero_doc=numero, nombre=nombre)
                     )  # type: ignore
                     screenshot_list_path = self.capture.save_screenshot_bytes(
                         captura_lista_placas,
@@ -153,9 +164,10 @@ class ProcesoUnitarioWF:
                     logger.info(
                         f"Captura de lista de placas guardada en: {screenshot_list_path}"
                     )
+
                     if not placas:
                         self.scraper.volver_a_inicio()
-                        self.source_repo.marcar_fallido(self.record, "Error Controlado: No Encontrado")
+                        self.source_repo.marcar_fallido(self.record, "Error Controlado: No Encontrado o nombre del propietario no coindice")
                         pdf_path = self.pdf.consolidate_images_to_pdf(
                             image_paths, numero
                         )
