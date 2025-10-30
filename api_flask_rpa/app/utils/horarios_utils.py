@@ -53,11 +53,12 @@ def puede_ejecutar_en_fecha(
         hora or datetime.now(), hora_inicio_str=hora_inicio, hora_fin_str=hora_fin
     )
     logger.info(
-        "Validación ejecución: fecha=%s dia_habil=%s horario_ok=%s",
+        "Validación ejecución: fecha=%s dia_habil=%s horario_ok=%s horario_inicio=%s horario_fin=%s",
         fecha,
         dia_habil,
         horario_ok,
         hora_inicio,
         hora_fin,
     )
+
     return dia_habil and horario_ok
