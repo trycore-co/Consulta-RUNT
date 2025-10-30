@@ -6,6 +6,7 @@ from app.services.pdf_service import PDFService
 from app.repositories.nocodb_target_repository import NocoDbTargetRepository
 from app.repositories.nocodb_source_repository import NocoDbSourceRepository
 from app.utils.logging_utils import get_logger
+from app.utils.limpiar_nit import limpiar_nit_sin_dv
 from app.services.notification_service import NotificationService
 import time
 from datetime import datetime
@@ -75,10 +76,21 @@ class ProcesoUnitarioWF:
             self.record.get("Id") or self.record.get("ID") or self.record.get("id")
         )
         tipo = self.record.get("TipoIdentificacion")
-        numero = self.record.get("NumeroIdentificacion") or self.record.get(
-            "NumIdentificacion"
+        num_identificacion_original = self.record.get(
+            "NumeroIdentificacion"
+        ) or self.record.get("NumIdentificacion")
+        # Aplicar la función para obtener el número listo para la consulta
+        num_identificacion_str = (
+            str(num_identificacion_original)
+            if num_identificacion_original is not None
+            else None
         )
+        numero = limpiar_nit_sin_dv(num_identificacion_str, tipo)
 
+        logger.info(
+            f"ID {record_id} - Documento original: {num_identificacion_original}, "
+            f"Documento limpio para consulta: {numero}"
+        )
         # Validar que tenemos los datos necesarios
         if not record_id:
             logger.error(f"No se pudo extraer el ID del registro: {self.record}")
