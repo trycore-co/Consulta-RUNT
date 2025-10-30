@@ -73,7 +73,7 @@ class ProcesoUnitarioWF:
         ultimo_error = None
         for i in range(self.reintentos_login):
             try:
-                ok = self.scraper.login(user, password)
+                ok = self.scraper.login()
                 if ok:
                     logger.info("Login exitoso en intento %d/%d", i+1, self.reintentos_login)
                     return True
