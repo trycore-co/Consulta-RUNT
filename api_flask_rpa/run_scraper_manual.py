@@ -36,20 +36,27 @@ def test_nocodb_connection():
         print(f"   Parámetros cargados: {len(params)}")
         logger.info("✅ Conexión con NocoDB exitosa!")
         logger.info(f"   Parámetros cargados: {len(params)}")
-        return nocodb_client
+        return nocodb_client, params
     except Exception as e:
         print(f"❌ Error conectando con NocoDB: {e}")
         logger.error(f"❌ Error conectando con NocoDB: {e}", exc_info=True)
-        return None
+        return None, None
 
 
 def main():
     # 1️⃣ Probar conexión con NocoDB
-    nocodb_client = test_nocodb_connection()
+    nocodb_client, global_params = test_nocodb_connection()
     if not nocodb_client:
         print("⛔ No se puede continuar sin conexión a NocoDB")
         logger.critical("⛔ No se puede continuar sin conexión a NocoDB")
         return
+    runt_url = global_params.get("URLRUNT")
+    runt_username = global_params.get("UsuarioRUNT")
+    runt_password = global_params.get("PasswordRUNT")
+    # Puedes usar un valor por defecto si no está en NocoDB
+    runt_timeoutBajo = int(global_params.get("DelayBajo"))
+    runt_timeoutMedio = int(global_params.get("DelayMedio"))
+    runt_timeoutAlto = int(global_params.get("DelayAlto"))
 
     # 2️⃣ Inicializar repositorios
     source_repo = NocoDbSourceRepository(nocodb_client)
@@ -71,8 +78,17 @@ def main():
     logger.info(f"✅ Registro obtenido - ID: {registro.get('Id')}")
 
     # 4️⃣ Inicializar servicios
-    web_client = WebClient(base_url=settings.RUNT_URL, headless=False)
-    scraper = ScrapingService(web_client)
+    web_client = WebClient(base_url=runt_url, headless=False)
+    scraper = ScrapingService(
+        web_client,
+        url_runt=runt_url,
+        usuario_runt=runt_username,
+        password_runt=runt_password,
+        # Pasar los timeouts si quieres que el scraper los use
+        timeout_bajo=runt_timeoutBajo if runt_timeoutBajo is not None else 5,
+        timeout_medio=runt_timeoutMedio if runt_timeoutMedio is not None else 10,
+        timeout_largo=runt_timeoutAlto if runt_timeoutAlto is not None else 15,
+    )
     capture = CaptureService()
     pdf = PDFService()
     fecha_hora_inicio = datetime.now().isoformat()
@@ -80,7 +96,7 @@ def main():
         # 5️⃣ Login en el portal
         print("\n Iniciando sesión en RUNT...")
         logger.info("\n Iniciando sesión en RUNT...")
-        if not scraper.login(settings.RUNT_USERNAME, settings.RUNT_PASSWORD):
+        if not scraper.login():
             print("Error en el login")
             logger.error(
                 "Error en el login. Credenciales inválidas o falla de la página."

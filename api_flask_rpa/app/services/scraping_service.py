@@ -3,11 +3,8 @@ ScrapingService: controla todo el flujo Selenium del portal RUNT PRO
 usando WebClient y los selectores centralizados en resources/html_selectors.yaml
 """
 
-from typing import List, Dict
 from app.utils.logging_utils import get_logger
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from app.utils.homologacion_utils import homologar_tipo_documento
 from app.utils.string_utils import normalizar_nombre
@@ -26,7 +23,17 @@ class ScrapingService:
     - abrir ficha y extraer detalle -> devuelve dict con campos
     """
 
-    def __init__(self, web_client, selectors_path: str = None):
+    def __init__(
+        self,
+        web_client,
+        selectors_path: str = None,
+        timeout_bajo: int = 5,
+        timeout_medio: int = 10,
+        timeout_largo: int = 15,
+        url_runt: str = "",
+        usuario_runt: str = "", 
+        password_runt: str = "",
+    ):
         """
         Inicializa el servicio de scraping con el cliente web (Selenium)
         y carga los selectores desde el archivo YAML.
@@ -36,6 +43,12 @@ class ScrapingService:
             Path(__file__).parent.parent / "resources" / "html_selectors.yaml"
         )
         selectors_path = selectors_path or default_path
+        self.timeout_bajo = timeout_bajo
+        self.timeout_medio = timeout_medio
+        self.timeout_largo = timeout_largo
+        self.url_runt = url_runt
+        self.usuario_runt = usuario_runt
+        self.password_runt = password_runt
 
         try:
             with open(selectors_path, "r", encoding="utf-8") as f:
@@ -48,11 +61,15 @@ class ScrapingService:
             logger.error(f"Error cargando YAML de selectores: {e}")
             self.selectors = {}
 
-    def login(self, username: str, password: str) -> bool:
+    def login(self) -> bool:
         """
         Realiza el proceso de login en RUNT PRO.
         Retorna True si el inicio de sesión es exitoso.
         """
+        if not self.usuario_runt or not self.password_runt:
+            logger.error("Credenciales del RUNT no disponibles para el login.")
+            return False
+
         s = self.selectors["login"]
         s_home = self.selectors["home"]
         try:
@@ -62,7 +79,7 @@ class ScrapingService:
             try:
                 # Usamos el selector de bienvenida como indicador de sesión activa/bienvenida.
                 welcome_indicator = self.web_client.find_by_selector(
-                    s_home["mensaje_bienvenida"], timeout=5
+                    s_home["mensaje_bienvenida"], timeout=self.timeout_bajo
                 )
                 if welcome_indicator and welcome_indicator.is_displayed():
                     logger.info(
@@ -81,17 +98,19 @@ class ScrapingService:
 
             self.web_client.click_selector(s["boton_continuar"])
             logger.info("Ingresando credenciales...")
-            self.web_client.send_keys_selector(s["input_usuario"], username)
-            self.web_client.send_keys_selector(s["input_contrasena"], password)
+            self.web_client.send_keys_selector(s["input_usuario"], self.usuario_runt)
+            self.web_client.send_keys_selector(s["input_contrasena"], self.password_runt)
             self.web_client.click_selector(s["boton_iniciar_sesion"])
             logger.info("Iniciando sesión...")
-            time.sleep(5)
+            time.sleep(self.timeout_bajo)
 
             try:
                 # Verificar y manejar popup de sesiones
                 if self._handle_session_limit_popup():
                     logger.info("Popup de sesiones manejado correctamente")
-                    time.sleep(3)  # Esperar a que cierre las sesiones anteriores
+                    time.sleep(
+                        self.timeout_bajo
+                    )  # Esperar a que cierre las sesiones anteriores
             except Exception as e:
                 logger.error(f"Error manejando popup de sesiones: {e}")
                 return False
@@ -101,11 +120,11 @@ class ScrapingService:
                 # selector tu página principal después del login
                 s_home = self.selectors["home"]
                 ok = self.web_client.wait_until_is_visible(
-                    s_home["mensaje_bienvenida"], timeout=5
+                    s_home["mensaje_bienvenida"], timeout=self.timeout_bajo
                 )
                 if ok:
                     cerrar_guia = self.web_client.wait_until_is_visible(
-                        s_home["cerrar_navegacion_guiada"], timeout=5
+                        s_home["cerrar_navegacion_guiada"], timeout=self.timeout_bajo
                     )
                     if cerrar_guia:
                         self.web_client.click_selector(
@@ -134,20 +153,28 @@ class ScrapingService:
             try:
                 # Buscar el mensaje característico del popup
                 mensaje_sel = s_popup["mensaje"]
-                popup_visible = self.web_client.wait_until_is_visible(mensaje_sel, timeout=5)
+                popup_visible = self.web_client.wait_until_is_visible(
+                    mensaje_sel, timeout=self.timeout_bajo
+                )
                 if popup_visible:
-                    popup = self.web_client.find_by_selector(mensaje_sel, timeout=5)
+                    popup = self.web_client.find_by_selector(
+                        mensaje_sel, timeout=self.timeout_bajo
+                    )
 
                     if popup is not None and popup.is_displayed():
                         logger.warning("Detectado popup de sesiones excedidas")
                         # Hacer clic en "Cerrar sesiones" para cerrar las sesiones anteriores
                         try:
                             btn_cerrar_sel = s_popup["boton_cerrar_sesiones"]
-                            self.web_client.click_selector(btn_cerrar_sel, timeout=5)
+                            self.web_client.click_selector(
+                                btn_cerrar_sel, timeout=self.timeout_bajo
+                            )
                             logger.info(
                                 "Clic en 'Cerrar sesiones' - cerrando sesiones anteriores"
                             )
-                            time.sleep(5)  # Esperar a que se cierren las sesiones
+                            time.sleep(
+                                self.timeout_bajo
+                            )  # Esperar a que se cierren las sesiones
                             return True
 
                         except Exception as e:
@@ -156,9 +183,11 @@ class ScrapingService:
                             # Intentar con "Aceptar" como alternativa
                             try:
                                 btn_aceptar_sel = s_popup["boton_aceptar"]
-                                self.web_client.click_selector(btn_aceptar_sel, timeout=5)
+                                self.web_client.click_selector(
+                                    btn_aceptar_sel, timeout=self.timeout_bajo
+                                )
                                 logger.info("Clic en 'Aceptar' como alternativa")
-                                time.sleep(5)
+                                time.sleep(self.timeout_bajo)
                                 return True
                             except Exception as e2:
                                 logger.error(f"No se pudo cerrar el popup: {e2}")
@@ -191,8 +220,10 @@ class ScrapingService:
                 mensaje_error_sel = s_popup["mensaje"]
                 mensaje_sel = s_popup["mensaje_permisos"]
                 popup = self.web_client.find_by_selector(
-                    mensaje_error_sel, timeout=5
-                ) or self.web_client.find_by_selector(mensaje_sel, timeout=5)
+                    mensaje_error_sel, timeout=self.timeout_bajo
+                ) or self.web_client.find_by_selector(
+                    mensaje_sel, timeout=self.timeout_bajo
+                )
 
                 if popup.is_displayed():
                     logger.warning("Detectado popup de error de ruta/permisos")
@@ -200,9 +231,13 @@ class ScrapingService:
                     # Hacer clic en "Aceptar" para cerrar el popup
                     try:
                         btn_aceptar_sel = s_popup["boton_aceptar"]
-                        self.web_client.click_selector(btn_aceptar_sel, timeout=5)
+                        self.web_client.click_selector(
+                            btn_aceptar_sel, timeout=self.timeout_bajo
+                        )
                         logger.info("Popup de error de ruta cerrado")
-                        time.sleep(5)  # Esperar a que se cierre el popup
+                        time.sleep(
+                            self.timeout_bajo
+                        )  # Esperar a que se cierre el popup
                         return True
 
                     except Exception as e:
@@ -260,7 +295,7 @@ class ScrapingService:
         self.web_client.find_element(By.CSS_SELECTOR, boton_buscar).click()
 
         # 4. esperar resultados y parsear lista de placas
-        time.sleep(1.0)
+        time.sleep(self.timeout_bajo)
         placas = []
         try:
             placas_sel = self.selectors["consulta"]["lista_placas"]
@@ -277,9 +312,9 @@ class ScrapingService:
                 swal_sel = self.selectors.get("sweetalert_selector", ".swal2-popup")
                 el = self.web_client.find_element(By.CSS_SELECTOR, swal_sel, wait=False)
                 # si hay modal, no hay placas
-                return []
+                return ([], b"")
             except Exception:
-                return []
+                return ([], b"")
         return placas
 
     def consultar_por_propietario(
@@ -303,7 +338,7 @@ class ScrapingService:
                 "Fallo al navegar por el menú. Intentando acceso directo a la URL..."
             )
             self.web_client.open(s["url_consulta"])
-            time.sleep(2)
+            time.sleep(self.timeout_bajo)
 
             # 2.1. Verificar si apareció popup de error de ruta/permisos
             if self._handle_error_ruta_popup():
@@ -344,11 +379,13 @@ class ScrapingService:
             logger.info(f"Tipo de documento homologado: {tipo_doc}")
             tipo_elem = self.web_client.find_by_selector(s["select_tipo_documento"])
             tipo_elem.click()
-            time.sleep(1)
+            time.sleep(self.timeout_bajo)
 
             panel_selector = s["panel_opciones_tipo_doc"]
             if panel_selector:
-                self.web_client.find_by_selector(panel_selector, timeout=10)
+                self.web_client.find_by_selector(
+                    panel_selector, timeout=self.timeout_bajo
+                )
 
             opt_xpath = (
                 f"//mat-option//span[contains(normalize-space(.), '{tipo_doc}')]"
@@ -356,7 +393,7 @@ class ScrapingService:
             logger.info(f"Buscando opción de tipo_doc con XPATH: {opt_xpath}")
             opcion = self.web_client.find_element(By.XPATH, opt_xpath)
             opcion.click()
-            time.sleep(1.0)
+            time.sleep(self.timeout_bajo)
 
             self.web_client.send_keys_selector(s["input_numero_documento"], numero_doc)
             self.web_client.click_selector(s["boton_consultar"])
@@ -368,75 +405,109 @@ class ScrapingService:
         # Esperar el selector de placa
         selector_placa = s["selector_placa"]
         elemento_encontrado = False
+        nombre_encontrado = False
         try:
             try:
                 # 1. Intento de espera (timeout corto es más rápido si está visible de inmediato)
-                self.web_client.wait_until_is_visible(selector_placa, timeout=5)
+                self.web_client.wait_until_is_visible(
+                    s["input_nombre_propietario"], timeout=self.timeout_bajo
+                )
+                nombre_encontrado = True
+            except TimeoutException:
+                # Si la espera falla, intentamos una búsqueda directa por más tiempo (opcional)
+                try:
+                    nombre_plataforma_element = self.web_client.find_by_selector(
+                        s["input_nombre_propietario"], timeout=self.timeout_bajo
+                    )
+                    nombre_encontrado = True
+                except Exception:
+                    # El elemento realmente no está
+                    pass
+            if nombre_encontrado:
+                # Extraer el nombre de la plataforma
+                nombre_plataforma_element = self.web_client.find_by_selector(
+                    s["input_nombre_propietario"], timeout=self.timeout_bajo
+                )
+                nombre_plataforma = (
+                    nombre_plataforma_element.text.strip()
+                    or nombre_plataforma_element.get_attribute("value")
+                    or ""
+                ).strip()
+                logger.info(
+                    f"Texto bruto: '{nombre_plataforma_element.text}' | value='{nombre_plataforma_element.get_attribute('value')}'"
+                )
+
+                # Normalizar AMBOS nombres para la comparación
+                nombre_plataforma_normalizado = normalizar_nombre(nombre_plataforma)
+                nombre_noco_normalizado = normalizar_nombre(nombre)
+
+                logger.info(
+                    f"Comparando nombres: Plataforma='{nombre_plataforma_normalizado}' vs NocoDB='{nombre_noco_normalizado}'"
+                )
+                # VALIDACIÓN DE COINCIDENCIA
+                if nombre_plataforma_normalizado != nombre_noco_normalizado:
+                    motivo = f"Nombre no coincide. Plataforma: '{nombre_plataforma}'. NocoDB: '{nombre}'."
+                    screenshot_fallo = self.tomar_screenshot_bytes()
+                    time.sleep(self.timeout_bajo)
+                    logger.warning(f"ID {numero_doc} - {motivo}")
+                    return (
+                        [],
+                        screenshot_fallo,
+                    )
+                else:
+                    logger.info(
+                        "Nombre coincide"
+                    )
+        except TimeoutException:
+            logger.error("No se encontró el input de nombre.")
+            screenshot_fallo = self.tomar_screenshot_bytes()
+            time.sleep(self.timeout_bajo)
+            return ([], screenshot_fallo)
+
+        try:
+            try:
+                # 1. Intento de espera (timeout corto es más rápido si está visible de inmediato)
+                self.web_client.wait_until_is_visible(
+                    selector_placa, timeout=self.timeout_bajo
+                )
                 elemento_encontrado = True
             except TimeoutException:
                 # Si la espera falla, intentamos una búsqueda directa por más tiempo (opcional)
                 try:
-                    self.web_client.find_by_selector(selector_placa, timeout=3)
+                    self.web_client.find_by_selector(selector_placa, timeout=self.timeout_bajo)
                     elemento_encontrado = True
                 except Exception:
                     # El elemento realmente no está
                     pass
 
             logger.info(f"Selector de placas visible,{elemento_encontrado}")
-            nombre_plataforma_element = self.web_client.find_by_selector(
-                s["input_nombre_propietario"], timeout=3
-            )
-            # Extraer el nombre de la plataforma
-            nombre_plataforma = (
-                nombre_plataforma_element.text.strip()
-                or nombre_plataforma_element.get_attribute("value")
-                or ""
-            ).strip()
-            logger.info(
-                f"Texto bruto: '{nombre_plataforma_element.text}' | value='{nombre_plataforma_element.get_attribute('value')}'"
-            )
-
-            # Normalizar AMBOS nombres para la comparación
-            nombre_plataforma_normalizado = normalizar_nombre(nombre_plataforma)
-            nombre_noco_normalizado = normalizar_nombre(nombre)
-
-            logger.info(
-                f"Comparando nombres: Plataforma='{nombre_plataforma_normalizado}' vs NocoDB='{nombre_noco_normalizado}'"
-            )
-            # VALIDACIÓN DE COINCIDENCIA
-            if nombre_plataforma_normalizado != nombre_noco_normalizado:
-                motivo = f"Nombre no coincide. Plataforma: '{nombre_plataforma}'. NocoDB: '{nombre}'."
-                screenshot_fallo = self.tomar_screenshot_bytes()
-                logger.warning(f"ID {numero_doc} - {motivo}")
-                return (
-                    [],
-                    screenshot_fallo,
-                )
-
             if not elemento_encontrado:
                 s_consulta = self.selectors["consulta_propietario"]
                 ok = self.web_client.wait_until_is_visible(
-                    s_consulta["alerta_modal"], timeout=5
+                    s_consulta["alerta_modal"], timeout=self.timeout_bajo
                 )
                 if ok:
                     png_bytes = self.tomar_screenshot_bytes()
                     self.web_client.click_selector(
-                        s_consulta["alerta_boton_aceptar"], timeout=5
+                        s_consulta["alerta_boton_aceptar"], timeout=self.timeout_bajo
                     )
-                    time.sleep(1)
+                    time.sleep(self.timeout_bajo)
                     return ([], png_bytes)
                 else:
                     logger.error("No se encontró alerta modal tras consulta fallida.")
-                    return []
+                    #  return ([], b"")
             else:
-                self.web_client.click_selector(s["selector_placa"], timeout=5)
+                self.web_client.click_selector(
+                    s["selector_placa"], timeout=self.timeout_bajo
+                )
 
         except TimeoutException:
             logger.error("No se encontró el selector de placas.")
-            return []
+            return ([], b"")
 
         #  Se toma la captura de la lista de placas
         png_bytes = self.tomar_screenshot_bytes()
+        time.sleep(self.timeout_bajo)
 
         # Obtener lista de placas
         try:
@@ -462,18 +533,22 @@ class ScrapingService:
         try:
             logger.info("Intentando navegación por el menú...")
             # Abrir menú lateral
-            self.web_client.click_selector(s_home["menu_consultas"], timeout=3)
-            time.sleep(3)
+            self.web_client.click_selector(
+                s_home["menu_consultas"], timeout=self.timeout_bajo
+            )
+            time.sleep(self.timeout_bajo)
 
             # Click en "Consulta información"
-            self.web_client.click_selector(s_home["consultar_informacion"], timeout=3)
-            time.sleep(3)
+            self.web_client.click_selector(
+                s_home["consultar_informacion"], timeout=self.timeout_bajo
+            )
+            time.sleep(self.timeout_bajo)
 
             # Click en "Consulta de automotores por propietario"
             self.web_client.click_selector(
-                s_home["opcion_automotores_propietario"], timeout=3
+                s_home["opcion_automotores_propietario"], timeout=self.timeout_bajo
             )
-            time.sleep(3)
+            time.sleep(self.timeout_bajo)
 
             logger.info("Navegación por menú exitosa.")
             return True
@@ -500,31 +575,33 @@ class ScrapingService:
             )
             el = self.web_client.find_element("xpath", xpath_placa)
             el.click()
-            time.sleep(2)
+            time.sleep(self.timeout_bajo)
 
             # Esperar contenedor de detalle
             contenedor = self.web_client.find_by_selector(
-                s_det["contenedor_detalle"], timeout=5
+                s_det["contenedor_detalle"], timeout=self.timeout_bajo
             )
             bloques = self.web_client.find_all_by_selector(s_det["bloque_detalle"])
 
             formulario_consulta = self.web_client.find_by_selector(
-                s["formulario_consulta"], timeout=5
+                s["formulario_consulta"], timeout=self.timeout_bajo
             )
             self.web_client.driver.execute_script(
                 "arguments[0].style.zoom = '20%';", formulario_consulta
             )
-            time.sleep(1.0)
+            time.sleep(self.timeout_bajo)
 
             datos_generales = self.web_client.find_by_selector(
-                s["datos_generales"], timeout=5
+                s["datos_generales"], timeout=self.timeout_bajo
             )
             self.web_client.driver.execute_script(
                 "arguments[0].style.zoom = '20%';", datos_generales
             )
             time.sleep(1.0)
 
-            footer = self.web_client.find_by_selector(s["footer"], timeout=5)
+            footer = self.web_client.find_by_selector(
+                s["footer"], timeout=self.timeout_bajo
+            )
             self.web_client.driver.execute_script(
                 "arguments[0].style.zoom = '20%';", footer
             )
@@ -570,7 +647,9 @@ class ScrapingService:
                 "arguments[0].style.zoom = '100%';", contenedor
             )
 
-            self.web_client.click_selector(s["selector_placa"], timeout=5)
+            self.web_client.click_selector(
+                s["selector_placa"], timeout=self.timeout_bajo
+            )
             return (detalle, png_bytes)
 
         except Exception as e:
@@ -591,11 +670,11 @@ class ScrapingService:
         try:
             s_panel = self.selectors["consulta_propietario"]["panel_lista_placas"]
             visible = self.web_client.wait_until_is_visible(
-                s_panel, timeout=5
+                s_panel, timeout=self.timeout_bajo
             )
             if visible:
-                self.web_client.click_selector(s_panel, timeout=5)
-                time.sleep(1)
+                self.web_client.click_selector(s_panel, timeout=self.timeout_bajo)
+                time.sleep(self.timeout_bajo)
 
             s_home = self.selectors["home"]
             logo_xpath = (
@@ -605,7 +684,7 @@ class ScrapingService:
 
             # Usar find_element en lugar de click_selector para el XPath indexado
             self.web_client.find_element(By.XPATH, logo_xpath).click()
-            time.sleep(1)
+            time.sleep(self.timeout_bajo)
             return True
         except Exception as e:
             logger.warning(

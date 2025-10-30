@@ -63,6 +63,9 @@ class ProcesoConsultaWF:
         timeout_bajo = int(parametros.get("DelayBajo", 5) or 5)
         timeout_medio = int(parametros.get("DelayMedio", 10) or 10)
         timeout_largo = int(parametros.get("DelayAlto", 15) or 15)
+        url_runt = parametros.get("URLRUNT", "")
+        usuario_runt = parametros.get("UsuarioRUNT", "")
+        password_runt = parametros.get("PasswordRUNT", "")
 
         # Contadores y resultados
         ok_count, error_count = 0, 0
@@ -93,6 +96,9 @@ class ProcesoConsultaWF:
                     timeout_bajo=timeout_bajo,
                     timeout_medio=timeout_medio,
                     timeout_largo=timeout_largo,
+                    url_runt=url_runt,
+                    usuario_runt=usuario_runt,
+                    password_runt=password_runt,
                 )
                 resultado = wf_unit.ejecutar()
 
