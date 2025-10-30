@@ -12,6 +12,7 @@ logger = get_logger("homologacion_utils")
 # Diccionario de homologación de tipos de documento
 TIPO_DOCUMENTO_MAP = {
     "CC": "Cédula Ciudadanía",
+    "CEDULA": "Cédula Ciudadanía",
     "CÉDULA DE CIUDADANÍA": "Cédula Ciudadanía",
     "CEDULA DE CIUDADANIA": "Cédula Ciudadanía",
     "CEDULA CIUDADANÍA": "Cédula Ciudadanía",

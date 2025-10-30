@@ -10,6 +10,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from app.utils.homologacion_utils import homologar_tipo_documento
+from app.utils.string_utils import normalizar_nombre
 import time
 import yaml
 from pathlib import Path
@@ -77,7 +78,7 @@ class ScrapingService:
                 logger.warning(
                     f"Error al verificar estado de sesión (no fatal): {e}. Se procede con login."
                 )
-            
+
             self.web_client.click_selector(s["boton_continuar"])
             logger.info("Ingresando credenciales...")
             self.web_client.send_keys_selector(s["input_usuario"], username)
@@ -281,7 +282,9 @@ class ScrapingService:
                 return []
         return placas
 
-    def consultar_por_propietario(self, tipo_doc: str, numero_doc: str):
+    def consultar_por_propietario(
+        self, tipo_doc: str, numero_doc: str, nombre: str
+    ):
         """
         Consulta las placas asociadas a un propietario en RUNT PRO.
         Primero intenta navegar por el menú.
@@ -380,6 +383,36 @@ class ScrapingService:
                     pass
 
             logger.info(f"Selector de placas visible,{elemento_encontrado}")
+            nombre_plataforma_element = self.web_client.find_by_selector(
+                s["input_nombre_propietario"], timeout=3
+            )
+            # Extraer el nombre de la plataforma
+            nombre_plataforma = (
+                nombre_plataforma_element.text.strip()
+                or nombre_plataforma_element.get_attribute("value")
+                or ""
+            ).strip()
+            logger.info(
+                f"Texto bruto: '{nombre_plataforma_element.text}' | value='{nombre_plataforma_element.get_attribute('value')}'"
+            )
+
+            # Normalizar AMBOS nombres para la comparación
+            nombre_plataforma_normalizado = normalizar_nombre(nombre_plataforma)
+            nombre_noco_normalizado = normalizar_nombre(nombre)
+
+            logger.info(
+                f"Comparando nombres: Plataforma='{nombre_plataforma_normalizado}' vs NocoDB='{nombre_noco_normalizado}'"
+            )
+            # VALIDACIÓN DE COINCIDENCIA
+            if nombre_plataforma_normalizado != nombre_noco_normalizado:
+                motivo = f"Nombre no coincide. Plataforma: '{nombre_plataforma}'. NocoDB: '{nombre}'."
+                screenshot_fallo = self.tomar_screenshot_bytes()
+                logger.warning(f"ID {numero_doc} - {motivo}")
+                return (
+                    [],
+                    screenshot_fallo,
+                )
+
             if not elemento_encontrado:
                 s_consulta = self.selectors["consulta_propietario"]
                 ok = self.web_client.wait_until_is_visible(
