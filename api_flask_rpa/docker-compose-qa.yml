@@ -10,7 +10,7 @@ services:
     ports:
       - 8080:8080  # Puerto actualizado para evitar conflictos
     volumes:
-      - ./opt/runt:/opt/runt
+      - /opt/runt:/opt/runt
     user: "1000:1000"
     restart: always
     init: true
@@ -35,7 +35,7 @@ services:
     env_file:
       - ./.env
     volumes:
-      - ./opt/runt:/opt/runt
+      - /opt/runt:/opt/runt
     user: "1000:1000"
     restart: always
     init: true

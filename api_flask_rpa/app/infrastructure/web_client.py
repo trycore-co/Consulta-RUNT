@@ -1,10 +1,11 @@
 """
 WebClient: wrapper Selenium para RUNT PRO.
+Modificado para usar rutas de entorno en lugar de ChromeDriverManager.
 """
-
+import os  # Importa 'os' para leer las variables de entorno
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
-from webdriver_manager.chrome import ChromeDriverManager
+# Se elimina ChromeDriverManager, ya no es necesario
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -15,18 +16,40 @@ import time
 
 class WebClient:
     def __init__(
-        self, base_url: str, headless: bool = False,
+        self, base_url: str,
         browser=None, timeout: int = 20
     ):
+        """
+        Constructor modificado. 
+        El modo headless se controla por variables de entorno (SELENIUM_HEADLESS).
+        """
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self.driver = browser or self._create_driver(headless=headless)
+        self.driver = browser or self._create_driver()
         self.wait = WebDriverWait(self.driver, self.timeout)
 
-    def _create_driver(self, headless=False):
+    def _create_driver(self):
+        """
+        Crea el driver usando las rutas y configuraciones definidas
+        en las variables de entorno del Dockerfile (CHROME_BIN, CHROMEDRIVER_PATH).
+        """
         options = webdriver.ChromeOptions()
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
+
+        # --- 1. Leer configuración de Variables de Entorno (del Dockerfile) ---
+        if os.environ.get("SELENIUM_HEADLESS") == "True":
+            options.add_argument("--headless=new")
+        
+        if os.environ.get("CHROME_NO_SANDBOX") == "True":
+            options.add_argument("--no-sandbox")
+
+        chrome_binary_path = os.environ.get("CHROME_BIN", "/usr/local/bin/chrome")
+        if chrome_binary_path and os.path.exists(chrome_binary_path):
+            options.binary_location = chrome_binary_path
+        else:
+            print(f"Advertencia: No se encontró el binario de Chrome en {chrome_binary_path}")
+
+        # --- 2. Argumentos de estabilidad (los que ya tenías) ---
+        options.add_argument("--disable-dev-shm-usage") # Crucial en Docker
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--disable-features=RendererCodeIntegrity")
         options.add_argument("--log-level=3")
@@ -36,11 +59,22 @@ class WebClient:
         options.add_argument("--disable-gpu")
         options.add_argument("--no-zygote")
         options.add_argument("--ignore-certificate-errors")
-        if headless:
-            options.add_argument("--headless=new")
-        driver = webdriver.Chrome(
-            service=ChromeService(ChromeDriverManager().install()), options=options
-        )
+        options.add_argument("--window-size=1920,1080")
+
+        # --- 3. Usar el ChromeDriver instalado en el Dockerfile ---
+        driver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/local/bin/chromedriver")
+        
+        if not os.path.exists(driver_path):
+            # Si el driver no está donde debería, fallar rápido.
+            raise FileNotFoundError(f"ChromeDriver no se encontró en la ruta: {driver_path}. Revisa el Dockerfile.")
+
+        # Inicializa el servicio apuntando al ejecutable del driver
+        service = ChromeService(executable_path=driver_path)
+        
+        print(f"Iniciando Chrome desde: {chrome_binary_path}")
+        print(f"Usando ChromeDriver desde: {driver_path}")
+        
+        driver = webdriver.Chrome(service=service, options=options)
         return driver
 
     def open(self, path: str = "/"):
