@@ -1,0 +1,58 @@
+name: cisa_consultaRunt
+services:
+  api:
+    build:
+      context: ./
+      dockerfile: docker/api.Dockerfile
+    container_name: api_flask_consultaRunt
+    env_file:
+      - ./.env
+    ports:
+      - 8080:8080  # Puerto actualizado para evitar conflictos
+    networks:
+      - cisa_consultaRunt
+    volumes:
+      - /opt/runt:/opt/runt
+    user: "1000:1000"
+    restart: always
+    init: true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    privileged: true # Permite acceso privilegiado al contenedor
+    cap_add:
+      - SYS_ADMIN          # Permite operaciones administrativas en el contenedor
+    environment:
+      - TZ=America/Bogota  # Configurar zona horaria
+  poller:
+    build:
+      context: ./
+      dockerfile: docker/poller.Dockerfile
+    container_name: consulta-runt-poller
+    depends_on:
+      - api
+    env_file:
+      - ./.env
+    networks:
+      - cisa_consultaRunt
+    volumes:
+      - /opt/runt:/opt/runt
+    user: "1000:1000"
+    restart: always
+    init: true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    privileged: true # Permite acceso privilegiado al contenedor
+    cap_add:
+      - SYS_ADMIN          # Permite operaciones administrativas en el contenedor
+    environment:
+      - TZ=America/Bogota  # Configurar zona horaria
+      
+networks:
+  cisa_consultaRunt:
+    external: true

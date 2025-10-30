@@ -6,14 +6,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates gcc && rm -rf /var/lib/apt/lists/*
 
 COPY ./requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt && pip install gunicorn
-
+RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY . /app
 RUN useradd -u 1000 -m appuser
 USER 1000:1000
 
-EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
-  CMD curl -f http://localhost:8080/health || exit 1
+  CMD pgrep -f "python.*poller.py" || exit 1
 
-CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:8080", "run:app"]
+CMD ["python", "-u", "poller.py"]
