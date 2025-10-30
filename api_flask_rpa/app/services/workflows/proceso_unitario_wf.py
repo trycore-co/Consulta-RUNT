@@ -10,8 +10,15 @@ from app.utils.limpiar_nit import limpiar_nit_sin_dv
 from app.services.notification_service import NotificationService
 import time
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 logger = get_logger("proceso_unitario_wf")
+
+# --- Zona horaria y helper para timestamps en Colombia ---
+ZONA_CO = ZoneInfo("America/Bogota")
+def now_co_str() -> str:
+    """Devuelve fecha/hora local de Colombia en formato DD-MM-YYYY HH:MM."""
+    return datetime.now(ZONA_CO).strftime("%d-%m-%Y %H:%M")
 
 
 class ProcesoUnitarioWF:
@@ -73,7 +80,7 @@ class ProcesoUnitarioWF:
         ultimo_error = None
         for i in range(self.reintentos_login):
             try:
-                ok = self.scraper.login()
+                ok = self.scraper.login()  # si tu ScrapingService acepta user/pwd aquí, pásalos
                 if ok:
                     logger.info("Login exitoso en intento %d/%d", i+1, self.reintentos_login)
                     return True
@@ -134,7 +141,9 @@ class ProcesoUnitarioWF:
             }
 
         input_masked = f"{tipo}:{numero}"
-        fecha_hora_inicio = datetime.now().isoformat()
+        # Timestamp de inicio del proceso completo (hora Colombia)
+        fecha_hora_inicio = now_co_str()
+
         logger.info(f"Procesando registro ID={record_id}, Tipo={tipo}, Numero={numero}")
         # Marcar como “Procesando” en Noco
         self.source_repo.marcar_en_proceso(self.record)
@@ -172,10 +181,9 @@ class ProcesoUnitarioWF:
                     screenshot_list_path = self.capture.save_screenshot_bytes(
                         captura_lista_placas,
                         self.correlation_id,
-                        numero,  # Identificador único para esta captura: [correlation_id]_[NumeroIdentificacion].png
+                        numero,  # Identificador único: [correlation_id]_[NumeroIdentificacion].png
                     )
-                    image_paths = []
-                    image_paths.append(screenshot_list_path)
+                    image_paths = [screenshot_list_path]
 
                     logger.info(
                         f"Captura de lista de placas guardada en: {screenshot_list_path}"
@@ -183,21 +191,31 @@ class ProcesoUnitarioWF:
 
                     if not placas:
                         self.scraper.volver_a_inicio()
-                        self.source_repo.marcar_fallido(self.record, "Error Controlado: No Encontrado o nombre del propietario no coindice")
+                        # corregir texto: "coincide"
+                        self.source_repo.marcar_fallido(self.record, "Error Controlado: No Encontrado o nombre del propietario no coincide")
                         pdf_path = self.pdf.consolidate_images_to_pdf(
                             image_paths, numero
                         )
-
                         return {
                             "id": record_id,
                             "status": "exitoso",
                             "pdf": pdf_path,
                         }
 
+                    # Por cada placa, medir inicio/fin en hora Colombia
                     for placa in placas:
+                        inicio_placa = now_co_str()
                         detalle, png = self.scraper.abrir_ficha_y_extraer(placa)
-                        fecha_hora_fin = datetime.now().isoformat()
-                        self.target_repo.upsert_vehicle_detail(self.record, vehicle_details=detalle, ruta_pdf=None, fecha_inicio=fecha_hora_inicio, fecha_fin=fecha_hora_fin)
+                        fin_placa = now_co_str()
+
+                        self.target_repo.upsert_vehicle_detail(
+                            self.record,
+                            vehicle_details=detalle,
+                            ruta_pdf=None,
+                            fecha_inicio=inicio_placa,
+                            fecha_fin=fin_placa
+                        )
+
                         saved = self.capture.save_screenshot_bytes(
                             png, self.correlation_id, placa
                         )
@@ -216,13 +234,12 @@ class ProcesoUnitarioWF:
                     last_scr = last_screens[-1] if last_screens else None
 
                     if intento >= self.reintentos_proceso:
-                        self.source_repo.marcar_fallido(self.record, f"Error inesperado: {str(e)}")  # type: ignore ("str(e))
+                        self.source_repo.marcar_fallido(self.record, f"Error inesperado: {str(e)}")  # type: ignore
                         self.notifier.send_failure_unexpected(
                             record_id=str(record_id),
                             error=str(e),
                             last_screenshot=last_scr,
                         )
-
                         return {"id": record_id, "status": "error", "error": str(e)}
                     time.sleep(2 * intento)  # backoff exponencial
 
