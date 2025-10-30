@@ -23,11 +23,14 @@ class ProcesoUnitarioWF:
         correlation_id: str,
         notifier: NotificationService,
         session_active: bool = False,
-        reintentos_login: int = 3,
+        reintentos_login: int = 2,
         reintentos_proceso: int = 2,
-        timeout_bajo: int = 3,
-        timeout_medio: int = 8,
-        timeout_largo: int = 20,
+        timeout_bajo: int = 5,
+        timeout_medio: int = 10,
+        timeout_largo: int = 15,
+        url_runt: str = "",
+        usuario_runt: str = "",          # 💡 Nuevo: Aceptar credenciales
+        password_runt: str = "",
     ):
         self.record = record
         self.nocodb_client = nocodb_client
@@ -35,12 +38,25 @@ class ProcesoUnitarioWF:
         self.correlation_id = correlation_id
         self.session_active = session_active
 
+        # Guardar credenciales
+        self.url_runt = url_runt
+        self.usuario_runt = usuario_runt
+        self.password_runt = password_runt
+
         # repos/services
         self.source_repo = NocoDbSourceRepository(self.nocodb_client)
         self.target_repo = NocoDbTargetRepository(self.nocodb_client)
 
         # selectors: carga desde archivo YAML si lo necesitas;
-        self.scraper = ScrapingService(web_client=self.web_client)
+        self.scraper = ScrapingService(
+            web_client=self.web_client,
+            timeout_bajo=timeout_bajo,
+            timeout_medio=timeout_medio,
+            timeout_largo=timeout_largo,
+            url_runt=self.url_runt,
+            usuario_runt=self.usuario_runt,
+            password_runt=self.password_runt,
+        )
         self.capture = CaptureService()
         self.pdf = PDFService()
         # self.email_client = EmailClient()
