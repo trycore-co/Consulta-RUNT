@@ -221,6 +221,9 @@ class ProcesoUnitarioWF:
                         )
                         image_paths.append(saved)
 
+                    logger.info(
+                        "Finalizo el guardado , se procede a devolucion a home de RUNT PRO"
+                    )
                     self.scraper.volver_a_inicio()
                     pdf_path = self.pdf.consolidate_images_to_pdf(image_paths, numero)
                     self.source_repo.marcar_exitoso(self.record)
@@ -229,7 +232,7 @@ class ProcesoUnitarioWF:
                     return {"id": record_id, "status": "exitoso", "pdf": pdf_path}
 
                 except Exception as e:
-                    logger.exception(f"Error en intento {intento}/{self.reintentos_proceso} para ID={record_id}")
+                    logger.exception(f"Error en intento {intento}/{self.reintentos_proceso} para ID={record_id}, {str(e)}")
                     last_screens = self.capture.list_images_for_correlation(self.correlation_id)
                     last_scr = last_screens[-1] if last_screens else None
 
