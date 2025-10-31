@@ -232,7 +232,9 @@ class ProcesoUnitarioWF:
                     return {"id": record_id, "status": "exitoso", "pdf": pdf_path}
 
                 except Exception as e:
-                    logger.exception(f"Error en intento {intento}/{self.reintentos_proceso} para ID={record_id}, {str(e)}")
+                    linea_error = e.__traceback__.tb_lineno
+                    logger.exception(f"Error en intento {intento}/{self.reintentos_proceso} para ID={record_id}, "
+                     f"{str(e)} (línea {linea_error})")
                     last_screens = self.capture.list_images_for_correlation(self.correlation_id)
                     last_scr = last_screens[-1] if last_screens else None
 
