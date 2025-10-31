@@ -317,9 +317,7 @@ class ScrapingService:
                 return ([], b"")
         return placas
 
-    def consultar_por_propietario(
-        self, tipo_doc: str, numero_doc: str, nombre: str
-    ):
+    def consultar_por_propietario(self, tipo_doc: str, numero_doc: str, nombre: str):
         """
         Consulta las placas asociadas a un propietario en RUNT PRO.
         Primero intenta navegar por el menú.
@@ -345,21 +343,6 @@ class ScrapingService:
                 logger.error(
                     "Popup de error de ruta detectado incluso con acceso directo. Abortando consulta."
                 )
-                """
-                # Verificar que el login fue exitoso
-                    try:
-                        # selector tu página principal después del pop up
-                        s_home = self.selectors["home"]
-                        ok = self.web_client.find_by_selector(
-                            s_home["menu_consultas"], timeout=5
-                        )
-                        if ok:
-                            logger.info("Menú de consultas visible.")
-                            return True
-                    except TimeoutException:
-                        logger.error("No se esta visible el menú de consultas")
-                        return False
-                """
                 raise Exception(
                     "No se pudo acceder a la consulta por propietario ni por menú ni por URL"
                 )
@@ -368,7 +351,6 @@ class ScrapingService:
                 navegacion_exitosa = True
 
         if not navegacion_exitosa:
-            # Esto solo debería ocurrir si el menú falla y el acceso directo falla sin levantar pop-up
             raise Exception(
                 "No se pudo acceder a la consulta por propietario: Fallo en navegación por menú y URL."
             )
@@ -402,114 +384,179 @@ class ScrapingService:
             logger.error("Error ingresando datos de propietario: %s", e)
             raise
 
-        # Esperar el selector de placa
-        selector_placa = s["selector_placa"]
-        elemento_encontrado = False
-        nombre_encontrado = False
+        # 4. Esperar respuesta del servidor antes de verificar elementos
+        time.sleep(self.timeout_medio)  # Dar más tiempo para la respuesta
+        
+        # 5. PRIMERO verificar si aparece el popup de "no tiene placas"
+        popup_detectado = False
         try:
+            alerta_visible = self.web_client.wait_until_is_visible(
+                s["alerta_modal"], timeout=self.timeout_bajo
+            )
+            if alerta_visible:
+                popup_detectado = True
+                logger.warning(f"ID {numero_doc} - Popup de alerta detectado (sin placas asociadas)")
+                png_bytes = self.tomar_screenshot_bytes()
+                
+                try:
+                    self.web_client.click_selector(
+                        s["alerta_boton_aceptar"], timeout=self.timeout_bajo
+                    )
+                    time.sleep(self.timeout_bajo)
+                    logger.info("Popup cerrado exitosamente")
+                except Exception as e:
+                    logger.error(f"Error al cerrar popup: {e}")
+                
+                return ([], png_bytes)
+        except TimeoutException:
+            # No hay popup de alerta, continuar con el flujo normal
+            logger.info("No se detectó popup de alerta, continuando con validación de nombre")
+        except Exception as e:
+            logger.warning(f"Error al verificar popup de alerta: {e}")
+        
+        # Si se detectó y cerró el popup, no continuar
+        if popup_detectado:
+            return ([], b"")
+
+        # 6. Validar que el nombre del propietario coincida
+        try:
+            # Intentar encontrar el input de nombre con múltiples estrategias
+            nombre_plataforma_element = None
+            nombre_encontrado = False
+            
+            # Estrategia 1: Wait until visible
             try:
-                # 1. Intento de espera (timeout corto es más rápido si está visible de inmediato)
                 self.web_client.wait_until_is_visible(
+                    s["input_nombre_propietario"], timeout=self.timeout_bajo
+                )
+                nombre_plataforma_element = self.web_client.find_by_selector(
                     s["input_nombre_propietario"], timeout=self.timeout_bajo
                 )
                 nombre_encontrado = True
             except TimeoutException:
-                # Si la espera falla, intentamos una búsqueda directa por más tiempo (opcional)
+                logger.warning("Timeout esperando visibilidad del input de nombre")
+            except Exception as e:
+                logger.warning(f"Error en wait_until_is_visible: {e}")
+            
+            # Estrategia 2: Búsqueda directa si la primera falló
+            if not nombre_encontrado:
                 try:
                     nombre_plataforma_element = self.web_client.find_by_selector(
                         s["input_nombre_propietario"], timeout=self.timeout_bajo
                     )
                     nombre_encontrado = True
-                except Exception:
-                    # El elemento realmente no está
-                    pass
-            if nombre_encontrado:
-                # Extraer el nombre de la plataforma
-                nombre_plataforma_element = self.web_client.find_by_selector(
-                    s["input_nombre_propietario"], timeout=self.timeout_bajo
-                )
-                nombre_plataforma = (
-                    nombre_plataforma_element.text.strip()
-                    or nombre_plataforma_element.get_attribute("value")
-                    or ""
-                ).strip()
-                logger.info(
-                    f"Texto bruto: '{nombre_plataforma_element.text}' | value='{nombre_plataforma_element.get_attribute('value')}'"
-                )
+                except Exception as e:
+                    logger.warning(f"Error en find_by_selector: {e}")
+            
+            if not nombre_encontrado or nombre_plataforma_element is None:
+                logger.error(f"ID {numero_doc} - No se encontró el input de nombre del propietario después de múltiples intentos")
+                screenshot_fallo = self.tomar_screenshot_bytes()
+                time.sleep(self.timeout_bajo)
+                return ([], screenshot_fallo)
 
-                # Normalizar AMBOS nombres para la comparación
-                nombre_plataforma_normalizado = normalizar_nombre(nombre_plataforma)
-                nombre_noco_normalizado = normalizar_nombre(nombre)
+            # Extraer el nombre con manejo seguro de atributos
+            nombre_plataforma = ""
+            try:
+                # Intentar obtener el texto del elemento
+                texto = nombre_plataforma_element.text
+                if texto:
+                    nombre_plataforma = texto.strip()
+            except Exception as e:
+                logger.warning(f"Error obteniendo .text: {e}")
+            
+            # Si no hay texto, intentar con el atributo value
+            if not nombre_plataforma:
+                try:
+                    value = nombre_plataforma_element.get_attribute("value")
+                    if value:
+                        nombre_plataforma = value.strip()
+                except Exception as e:
+                    logger.warning(f"Error obteniendo attribute 'value': {e}")
+            
+            # Si aún no hay nombre, intentar con innerText
+            if not nombre_plataforma:
+                try:
+                    inner = nombre_plataforma_element.get_attribute("innerText")
+                    if inner:
+                        nombre_plataforma = inner.strip()
+                except Exception as e:
+                    logger.warning(f"Error obteniendo attribute 'innerText': {e}")
+            
+            if not nombre_plataforma:
+                logger.error(f"ID {numero_doc} - No se pudo extraer el nombre del elemento")
+                screenshot_fallo = self.tomar_screenshot_bytes()
+                return ([], screenshot_fallo)
+            
+            logger.info(f"Nombre extraído de la plataforma: '{nombre_plataforma}'")
 
-                logger.info(
-                    f"Comparando nombres: Plataforma='{nombre_plataforma_normalizado}' vs NocoDB='{nombre_noco_normalizado}'"
-                )
-                # VALIDACIÓN DE COINCIDENCIA
-                if nombre_plataforma_normalizado != nombre_noco_normalizado:
-                    motivo = f"Nombre no coincide. Plataforma: '{nombre_plataforma}'. NocoDB: '{nombre}'."
-                    screenshot_fallo = self.tomar_screenshot_bytes()
-                    time.sleep(self.timeout_bajo)
-                    logger.warning(f"ID {numero_doc} - {motivo}")
-                    return (
-                        [],
-                        screenshot_fallo,
-                    )
-                else:
-                    logger.info(
-                        "Nombre coincide"
-                    )
-        except TimeoutException:
-            logger.error("No se encontró el input de nombre.")
-            screenshot_fallo = self.tomar_screenshot_bytes()
+            # Normalizar AMBOS nombres para la comparación
+            nombre_plataforma_normalizado = normalizar_nombre(nombre_plataforma)
+            nombre_noco_normalizado = normalizar_nombre(nombre)
+
+            logger.info(
+                f"Comparando nombres: Plataforma='{nombre_plataforma_normalizado}' vs NocoDB='{nombre_noco_normalizado}'"
+            )
+            
+            # VALIDACIÓN DE COINCIDENCIA
+            if nombre_plataforma_normalizado != nombre_noco_normalizado:
+                motivo = f"Nombre no coincide. Plataforma: '{nombre_plataforma}'. NocoDB: '{nombre}'."
+                screenshot_fallo = self.tomar_screenshot_bytes()
+                time.sleep(self.timeout_bajo)
+                logger.warning(f"ID {numero_doc} - {motivo}")
+                return ([], screenshot_fallo)
+            else:
+                logger.info("Nombre coincide correctamente")
+                
+        except Exception as e:
+            logger.error(f"Error crítico al validar nombre del propietario: {type(e).__name__} - {str(e)}")
+            try:
+                screenshot_fallo = self.tomar_screenshot_bytes()
+            except:
+                screenshot_fallo = b""
             time.sleep(self.timeout_bajo)
             return ([], screenshot_fallo)
 
+        # 7. Verificar y hacer clic en el selector de placas
+        selector_placa = s["selector_placa"]
+        elemento_encontrado = False
+        
         try:
             try:
-                # 1. Intento de espera (timeout corto es más rápido si está visible de inmediato)
                 self.web_client.wait_until_is_visible(
                     selector_placa, timeout=self.timeout_bajo
                 )
                 elemento_encontrado = True
             except TimeoutException:
-                # Si la espera falla, intentamos una búsqueda directa por más tiempo (opcional)
                 try:
                     self.web_client.find_by_selector(selector_placa, timeout=self.timeout_bajo)
                     elemento_encontrado = True
                 except Exception:
-                    # El elemento realmente no está
                     pass
 
-            logger.info(f"Selector de placas visible,{elemento_encontrado}")
+            logger.info(f"Selector de placas visible: {elemento_encontrado}")
+            
             if not elemento_encontrado:
-                s_consulta = self.selectors["consulta_propietario"]
-                ok = self.web_client.wait_until_is_visible(
-                    s_consulta["alerta_modal"], timeout=self.timeout_bajo
-                )
-                if ok:
-                    png_bytes = self.tomar_screenshot_bytes()
-                    self.web_client.click_selector(
-                        s_consulta["alerta_boton_aceptar"], timeout=self.timeout_bajo
-                    )
-                    time.sleep(self.timeout_bajo)
-                    return ([], png_bytes)
-                else:
-                    logger.error("No se encontró alerta modal tras consulta fallida.")
-                    #  return ([], b"")
-            else:
-                self.web_client.click_selector(
-                    s["selector_placa"], timeout=self.timeout_bajo
-                )
+                logger.error(f"ID {numero_doc} - No se encontró el selector de placas")
+                png_bytes = self.tomar_screenshot_bytes()
+                time.sleep(self.timeout_bajo)
+                return ([], png_bytes)
+            
+            # Hacer clic en el selector para desplegar las placas
+            self.web_client.click_selector(
+                s["selector_placa"], timeout=self.timeout_bajo
+            )
+            time.sleep(self.timeout_bajo)
+            
+        except Exception as e:
+            logger.error(f"Error al interactuar con selector de placas: {e}")
+            png_bytes = self.tomar_screenshot_bytes()
+            return ([], png_bytes)
 
-        except TimeoutException:
-            logger.error("No se encontró el selector de placas.")
-            return ([], b"")
-
-        #  Se toma la captura de la lista de placas
+        # 8. Tomar captura de la lista de placas
         png_bytes = self.tomar_screenshot_bytes()
         time.sleep(self.timeout_bajo)
 
-        # Obtener lista de placas
+        # 9. Obtener lista de placas
         try:
             elementos = self.web_client.find_all_by_selector(s["lista_placas"])
             placas = [
@@ -518,10 +565,11 @@ class ScrapingService:
                 if el.text.strip() and el.text.upper() != "SELECCIONE"
             ]
 
-            logger.info("Placas encontradas: %s", placas)
+            logger.info(f"ID {numero_doc} - Placas encontradas: {placas}")
             return (placas, png_bytes)
+            
         except Exception as e:
-            logger.error("Error al extraer lista de placas: %s", e)
+            logger.error(f"Error al extraer lista de placas: {e}")
             return ([], png_bytes)
 
     def _navegar_a_consulta_por_menu(self) -> bool:
